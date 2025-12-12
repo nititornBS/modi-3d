@@ -2,8 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useLoader } from "@react-three/fiber";
 import { Environment, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import Link from "next/link";
 
 const MODEL_OPTIONS = [
@@ -67,24 +68,55 @@ function ShirtModel({ logoTexture, baseColor }) {
 }
 
 function CupModel({ logoTexture, baseColor }) {
+  const obj = useLoader(OBJLoader, "/3d-models/cup.obj");
+  
+  // Clone the object to avoid mutating the original
+  const clonedObj = useMemo(() => {
+    const cloned = obj.clone();
+    
+    // Calculate bounding box to center the model
+    const box = new THREE.Box3().setFromObject(cloned);
+    const center = box.getCenter(new THREE.Vector3());
+    
+    // Center the model at origin
+    cloned.position.x = -center.x;
+    cloned.position.y = -center.y;
+    cloned.position.z = -center.z;
+    
+    return cloned;
+  }, [obj]);
+  
+  // Apply texture and color to all meshes in the model
+  useEffect(() => {
+    clonedObj.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        
+        // Create or update material
+        if (!child.material || !child.material.isMeshStandardMaterial) {
+          child.material = new THREE.MeshStandardMaterial({
+            color: logoTexture ? "#ffffff" : baseColor,
+            roughness: 0.3,
+            metalness: 0.05,
+            map: logoTexture || null,
+          });
+        } else {
+          // Update existing material
+          child.material.color = new THREE.Color(logoTexture ? "#ffffff" : baseColor);
+          child.material.map = logoTexture || null;
+          child.material.needsUpdate = true;
+        }
+      }
+    });
+  }, [clonedObj, logoTexture, baseColor]);
+  
   return (
-    <group position={[0, 0, 0]}>
-      <mesh castShadow receiveShadow>
-        <cylinderGeometry args={[0.8, 0.6, 2.1, 48, 1, false]} />
-        <meshStandardMaterial
-          color={logoTexture ? "#ffffff" : baseColor}
-          roughness={0.3}
-          metalness={0.05}
-          map={logoTexture || null}
-          transparent={false}
-        />
-      </mesh>
-      {/* Handle */}
-      <mesh position={[0.95, 0.3, 0]} rotation={[0, 0, 0]}>
-        <torusGeometry args={[0.55, 0.12, 16, 32]} />
-        <meshStandardMaterial color={baseColor} roughness={0.3} metalness={0.05} />
-      </mesh>
-    </group>
+    <primitive 
+      object={clonedObj} 
+      position={[0, 0, 0]}
+      scale={[1, 1, 1]}
+    />
   );
 }
 
