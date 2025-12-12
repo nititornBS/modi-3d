@@ -6,6 +6,8 @@ import { Canvas, useLoader } from "@react-three/fiber";
 import { Environment, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import Link from "next/link";
+import UVEditor from "@/components/UVEditor";
+import ModelUVDataLoader from "@/components/ModelUVDataLoader";
 
 const MODEL_OPTIONS = [
   { id: "shirt", label: "T‑Shirt" },
@@ -215,10 +217,13 @@ export default function StudioPage() {
   const [logoImage, setLogoImage] = useState(null);
   const [logoTexture, setLogoTexture] = useState(null);
   const [logoPosition, setLogoPosition] = useState({ x: 0, y: 0 });
+  const [uvPosition, setUvPosition] = useState({ u: 0.5, v: 0.5 });
+  const [uvScale, setUvScale] = useState({ u: 0.3, v: 0.3 });
   const [logoScale, setLogoScale] = useState(1);
   const [selectedModel, setSelectedModel] = useState("shirt");
   const [baseColor, setBaseColor] = useState("#ffffff");
   const [autoRotate, setAutoRotate] = useState(false);
+  const [useUVEditor, setUseUVEditor] = useState(true);
 
   const fileInputRef = useRef(null);
 
@@ -238,14 +243,40 @@ export default function StudioPage() {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const maxWidth = canvas.width * 0.65 * logoScale;
-      const targetWidth = maxWidth;
-      const targetHeight = (img.height / img.width) * targetWidth;
+      let x, y, targetWidth, targetHeight;
 
-      const offsetX = logoPosition.x * canvas.width * 0.3;
-      const offsetY = logoPosition.y * canvas.height * 0.3;
-      const x = canvas.width / 2 - targetWidth / 2 + offsetX;
-      const y = canvas.height / 2 - targetHeight / 2 + offsetY;
+      if (useUVEditor) {
+        // Use UV coordinates for positioning
+        const baseWidth = canvas.width * uvScale.u * logoScale;
+        const baseHeight = canvas.height * uvScale.v * logoScale;
+        const imageAspect = img.width / img.height;
+        const baseAspect = baseWidth / baseHeight;
+        
+        // Maintain aspect ratio
+        if (imageAspect > baseAspect) {
+          // Image is wider - fit to width
+          targetWidth = baseWidth;
+          targetHeight = baseWidth / imageAspect;
+        } else {
+          // Image is taller - fit to height
+          targetHeight = baseHeight;
+          targetWidth = baseHeight * imageAspect;
+        }
+        
+        // Position based on UV coordinates (0-1 range)
+        x = canvas.width * uvPosition.u - targetWidth / 2;
+        y = canvas.height * uvPosition.v - targetHeight / 2;
+      } else {
+        // Use legacy position system
+        const maxWidth = canvas.width * 0.65 * logoScale;
+        targetWidth = maxWidth;
+        targetHeight = (img.height / img.width) * targetWidth;
+
+        const offsetX = logoPosition.x * canvas.width * 0.3;
+        const offsetY = logoPosition.y * canvas.height * 0.3;
+        x = canvas.width / 2 - targetWidth / 2 + offsetX;
+        y = canvas.height / 2 - targetHeight / 2 + offsetY;
+      }
 
       ctx.drawImage(img, x, y, targetWidth, targetHeight);
 
@@ -257,12 +288,12 @@ export default function StudioPage() {
       texture.needsUpdate = true;
       setLogoTexture(texture);
     },
-    [logoPosition, logoScale, baseColor]
+    [logoPosition, logoScale, baseColor, useUVEditor, uvPosition, uvScale]
   );
 
   useEffect(() => {
     regenerateTexture(logoImage);
-  }, [logoImage, logoPosition, logoScale, regenerateTexture]);
+  }, [logoImage, logoPosition, logoScale, uvPosition, uvScale, regenerateTexture]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0];
@@ -275,6 +306,8 @@ export default function StudioPage() {
         setLogoImage(img);
         setUploadedImage(event.target?.result ?? null);
         setLogoPosition({ x: 0, y: 0 });
+        setUvPosition({ u: 0.5, v: 0.5 });
+        setUvScale({ u: 0.3, v: 0.3 });
         setLogoScale(1);
       };
       img.src = event.target?.result ?? "";
@@ -287,6 +320,8 @@ export default function StudioPage() {
     setLogoImage(null);
     setLogoTexture(null);
     setLogoPosition({ x: 0, y: 0 });
+    setUvPosition({ u: 0.5, v: 0.5 });
+    setUvScale({ u: 0.3, v: 0.3 });
     setLogoScale(1);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -365,55 +400,139 @@ export default function StudioPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 space-y-5">
-              <div>
-                <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
-                  <span className="font-medium text-slate-200">
-                    Horizontal position
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-400">
-                    {logoPosition.x.toFixed(2)}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={-1}
-                  max={1}
-                  step={0.02}
-                  value={logoPosition.x}
-                  onChange={(e) =>
-                    setLogoPosition((prev) => ({
-                      ...prev,
-                      x: parseFloat(e.target.value),
-                    }))
-                  }
-                  className="w-full accent-sky-400"
-                />
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-slate-200">
+                  Position & Scale
+                </h3>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useUVEditor}
+                    onChange={(e) => setUseUVEditor(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500"
+                  />
+                  <span className="text-[11px] text-slate-400">UV Editor</span>
+                </label>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
-                  <span className="font-medium text-slate-200">
-                    Vertical position
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-400">
-                    {logoPosition.y.toFixed(2)}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={-1}
-                  max={1}
-                  step={0.02}
-                  value={logoPosition.y}
-                  onChange={(e) =>
-                    setLogoPosition((prev) => ({
-                      ...prev,
-                      y: parseFloat(e.target.value),
-                    }))
-                  }
-                  className="w-full accent-sky-400"
-                />
-              </div>
+              {useUVEditor && uploadedImage ? (
+                <>
+                  <ModelUVDataLoader selectedModel={selectedModel}>
+                    {(uvData) => (
+                      <UVEditor
+                        image={logoImage}
+                        uvPosition={uvPosition}
+                        uvScale={uvScale}
+                        onUVChange={setUvPosition}
+                        baseColor={baseColor}
+                        uvData={uvData}
+                      />
+                    )}
+                  </ModelUVDataLoader>
+
+                  <div>
+                    <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
+                      <span className="font-medium text-slate-200">
+                        UV Scale U
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-400">
+                        {uvScale.u.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={0.8}
+                      step={0.01}
+                      value={uvScale.u}
+                      onChange={(e) =>
+                        setUvScale((prev) => ({
+                          ...prev,
+                          u: parseFloat(e.target.value),
+                        }))
+                      }
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
+                      <span className="font-medium text-slate-200">
+                        UV Scale V
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-400">
+                        {uvScale.v.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={0.8}
+                      step={0.01}
+                      value={uvScale.v}
+                      onChange={(e) =>
+                        setUvScale((prev) => ({
+                          ...prev,
+                          v: parseFloat(e.target.value),
+                        }))
+                      }
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
+                      <span className="font-medium text-slate-200">
+                        Horizontal position
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-400">
+                        {logoPosition.x.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-1}
+                      max={1}
+                      step={0.02}
+                      value={logoPosition.x}
+                      onChange={(e) =>
+                        setLogoPosition((prev) => ({
+                          ...prev,
+                          x: parseFloat(e.target.value),
+                        }))
+                      }
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">
+                      <span className="font-medium text-slate-200">
+                        Vertical position
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-400">
+                        {logoPosition.y.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-1}
+                      max={1}
+                      step={0.02}
+                      value={logoPosition.y}
+                      onChange={(e) =>
+                        setLogoPosition((prev) => ({
+                          ...prev,
+                          y: parseFloat(e.target.value),
+                        }))
+                      }
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+                </>
+              )}
 
               <div>
                 <div className="flex items-center justify-between text-xs sm:text-[13px] mb-1">

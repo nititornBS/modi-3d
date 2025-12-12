@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CupViewer from "@/components/CupViewer";
 
 export default function LandingPage() {
   return (
@@ -77,14 +78,12 @@ export default function LandingPage() {
                   Demo
                 </span>
               </div>
-              <div className="aspect-[16/10] rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-center text-sm text-slate-500">
-                3D viewer preview
-              </div>
+              <CupViewer />
               <div className="mt-4 grid grid-cols-4 gap-2 text-[11px] sm:text-xs text-slate-300">
-                <span className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-center">
+                <span className="rounded-lg border border-slate-900 bg-slate-950 px-2 py-1 text-center text-slate-500">
                   Shirt
                 </span>
-                <span className="rounded-lg border border-slate-900 bg-slate-950 px-2 py-1 text-center text-slate-500">
+                <span className="rounded-lg border border-sky-500/50 bg-sky-500/10 px-2 py-1 text-center text-sky-300">
                   Cup
                 </span>
                 <span className="rounded-lg border border-slate-900 bg-slate-950 px-2 py-1 text-center text-slate-500">
