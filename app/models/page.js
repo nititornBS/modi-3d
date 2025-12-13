@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { MODEL_FILES, getAllModelFiles } from "../studio/modelMapping";
@@ -43,7 +43,7 @@ const ALL_MODELS = [
   { id: "shirt-3", name: "Long sleeve T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#0066CC"] },
 ];
 
-export default function ModelsPage() {
+function ModelsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
@@ -219,5 +219,22 @@ export default function ModelsPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function ModelsPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto mb-4"></div>
+            <p className="text-slate-400">Loading...</p>
+          </div>
+        </div>
+      </main>
+    }>
+      <ModelsPageContent />
+    </Suspense>
   );
 }

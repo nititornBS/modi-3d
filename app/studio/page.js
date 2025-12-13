@@ -578,7 +578,7 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
   );
 }
 
-export default function StudioPage() {
+function StudioPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const urlModel = searchParams.get("model");
@@ -1135,5 +1135,22 @@ export default function StudioPage() {
         )}
       </ModelUVDataLoader>
     </main>
+  );
+}
+
+export default function StudioPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400 mx-auto mb-4"></div>
+            <p className="text-slate-400">Loading...</p>
+          </div>
+        </div>
+      </main>
+    }>
+      <StudioPageContent />
+    </Suspense>
   );
 }
