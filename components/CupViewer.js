@@ -7,7 +7,7 @@ import { OrbitControls, PerspectiveCamera, Environment } from "@react-three/drei
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 
 function CupModel() {
-  const obj = useLoader(OBJLoader, "/3d-models/cup.obj");
+  const obj = useLoader(OBJLoader, "/3d-models/Tea_Mug.obj");
   
   // Clone the object to avoid mutating the original
   const clonedObj = useMemo(() => {

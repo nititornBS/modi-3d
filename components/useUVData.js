@@ -164,7 +164,7 @@ export function useShirtUVData() {
 }
 
 export function useCupUVData() {
-  const obj = useLoader(OBJLoader, "/3d-models/cup.obj");
+  const obj = useLoader(OBJLoader, "/3d-models/Tea_Mug.obj");
   
   return useMemo(() => {
     const cloned = obj.clone();
