@@ -1,0 +1,223 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { MODEL_FILES, getAllModelFiles } from "../studio/modelMapping";
+
+const CATEGORIES = [
+  { id: "all", name: "All", icon: "📦" },
+  { id: "box", name: "Boxes", icon: "📦" },
+  { id: "bottle", name: "Bottles", icon: "🍼" },
+  { id: "cup", name: "Containers & Cups & Bowls", icon: "☕" },
+  { id: "shirt", name: "Apparel", icon: "👕" },
+];
+
+const ALL_MODELS = [
+  // Boxes
+  { id: "box-1", name: "Flip top gift box mockup", category: "box", colors: ["#8B4513", "#FFFFFF", "#FFD700"], isNew: true },
+  { id: "box-2", name: "Tuck end software box mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
+  { id: "box-3", name: "Square box mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
+  { id: "box-4", name: "Medicine box mockup", category: "box", colors: ["#0066CC", "#FFFFFF"] },
+  { id: "box-5", name: "Tuck end mailer box packaging mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
+  { id: "box-6", name: "Christmas gift box mockup", category: "box", colors: ["#8B4513"], isNew: true },
+  { id: "box-7", name: "Gift box with window mockup", category: "box", colors: ["#228B22"], isNew: true },
+  { id: "box-8", name: "Star shaped pillow box mockup", category: "box", colors: ["#DC143C"], isNew: true },
+  { id: "box-9", name: "Square shipping box mockup", category: "box", colors: ["#8B4513"] },
+  { id: "box-10", name: "Flip top magnetic gift box mockup", category: "box", colors: ["#FFFFFF"] },
+  
+  // Bottles
+  { id: "bottle-1", name: "Standard water bottle mockup", category: "bottle", colors: ["#00CED1", "#FFFFFF"] },
+  { id: "bottle-2", name: "Sports bottle mockup", category: "bottle", colors: ["#0066CC", "#FFFFFF"] },
+  { id: "bottle-3", name: "Glass bottle mockup", category: "bottle", colors: ["#8B4513", "#FFFFFF"] },
+  { id: "bottle-4", name: "Wine bottle mockup", category: "bottle", colors: ["#2F1B14"] },
+  
+  // Cups
+  { id: "cup-1", name: "Classic ceramic cup mockup", category: "cup", colors: ["#FFFFFF", "#F5F5DC"] },
+  { id: "cup-2", name: "Travel mug mockup", category: "cup", colors: ["#000000", "#FFFFFF"] },
+  { id: "cup-3", name: "Coffee mug with handle mockup", category: "cup", colors: ["#8B4513", "#FFFFFF"] },
+  
+  // Apparel
+  { id: "shirt-1", name: "Classic crew neck T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#000000"] },
+  { id: "shirt-2", name: "V-neck T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#808080"] },
+  { id: "shirt-3", name: "Long sleeve T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#0066CC"] },
+];
+
+export default function ModelsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
+
+  const filteredModels = useMemo(() => {
+    if (selectedCategory === "all") {
+      return ALL_MODELS;
+    }
+    return ALL_MODELS.filter((model) => model.category === selectedCategory);
+  }, [selectedCategory]);
+
+  const handleModelClick = (modelId) => {
+    const model = ALL_MODELS.find((m) => m.id === modelId);
+    if (model) {
+      router.push(`/studio?model=${model.category}&variation=${modelId}`);
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      {/* Header */}
+      <header className="border-b border-slate-800/80 bg-slate-950/80/90 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-4 sm:gap-6">
+          <Link href="/" className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-2xl bg-gradient-to-tr from-sky-500 via-cyan-400 to-emerald-400 shadow-lg shadow-sky-500/40 flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">
+              M3D
+            </div>
+            <div className="min-w-0">
+              <p className="text-base sm:text-xl font-semibold tracking-tight truncate sm:whitespace-normal">
+                Mockup 3D Studio
+              </p>
+              <p className="text-xs sm:text-sm text-slate-400 hidden sm:block">
+                Select a model to customize
+              </p>
+            </div>
+          </Link>
+
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 sm:px-5 py-2 text-xs sm:text-sm font-medium text-slate-100 shadow-sm hover:border-sky-500 hover:text-sky-100 transition flex-shrink-0"
+          >
+            <span className="hidden sm:inline">← Back to Home</span>
+            <span className="sm:hidden">← Home</span>
+          </Link>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+          {/* Breadcrumb and Title */}
+          <div className="mb-6">
+            <nav className="text-xs sm:text-sm text-slate-400 mb-3">
+              <Link href="/" className="hover:text-slate-300">Home</Link>
+              <span className="mx-2">/</span>
+              <span className="text-slate-300">Mockups</span>
+            </nav>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-slate-50 mb-2">
+              Customize & download mockups
+            </h1>
+            <p className="text-sm sm:text-base text-slate-400 max-w-3xl">
+              Explore high-quality customizable 3D mockups, including packaging mockups like boxes and bottles, 
+              apparel mockups like T-shirts and hoodies, and more.
+            </p>
+          </div>
+
+          {/* Search Bar */}
+          <div className="mb-6">
+            <div className="relative max-w-2xl">
+              <input
+                type="text"
+                placeholder="Try 4+ words to describe..."
+                className="w-full px-4 py-2.5 sm:py-3 pl-10 pr-4 text-sm bg-slate-900/70 border border-slate-800 rounded-lg text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+            </div>
+          </div>
+
+          {/* Categories - Below Search Bar */}
+          <div className="mb-6">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {CATEGORIES.map((category) => {
+                const isSelected = selectedCategory === category.id;
+                const count = category.id === "all" 
+                  ? ALL_MODELS.length 
+                  : ALL_MODELS.filter((m) => m.category === category.id).length;
+                
+                return (
+                  <button
+                    key={category.id}
+                    onClick={() => setSelectedCategory(category.id)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isSelected
+                        ? "bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40"
+                        : "bg-slate-900/70 text-slate-300 border border-slate-800 hover:border-slate-700 hover:bg-slate-900"
+                    }`}
+                  >
+                    <span>{category.icon}</span>
+                    <span>{category.name}</span>
+                    <span className={`text-xs ${isSelected ? "text-slate-700" : "text-slate-500"}`}>
+                      ({count})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Model Count */}
+          <div className="mb-4 sm:mb-6">
+            <p className="text-xs sm:text-sm text-slate-400">
+              <span className="font-semibold text-slate-300">{filteredModels.length}</span> Mockups
+            </p>
+          </div>
+
+          {/* Model Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+            {filteredModels.map((model) => (
+              <button
+                key={model.id}
+                onClick={() => handleModelClick(model.id)}
+                className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-sky-500/50 hover:bg-slate-900 transition-all duration-200 text-left"
+              >
+                {/* 3D Badge */}
+                <div className="absolute top-2 left-2 z-10 bg-slate-950/90 text-sky-400 text-[10px] font-semibold px-2 py-0.5 rounded border border-sky-500/30">
+                  3D
+                </div>
+                
+                {/* Edit Icon */}
+                <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-slate-950 rounded-full p-1.5 shadow-lg border border-slate-700">
+                    <svg className="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Model Preview Placeholder */}
+                <div className="aspect-square bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center border-b border-slate-800">
+                  <div className="text-4xl opacity-60">
+                    {model.category === "box" && "📦"}
+                    {model.category === "bottle" && "🍼"}
+                    {model.category === "cup" && "☕"}
+                    {model.category === "shirt" && "👕"}
+                  </div>
+                </div>
+
+                {/* Model Info */}
+                <div className="p-3 space-y-2">
+                  {model.isNew && (
+                    <span className="inline-block bg-emerald-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                      New
+                    </span>
+                  )}
+                  <h3 className="text-xs font-medium text-slate-200 line-clamp-2 leading-snug">
+                    {model.name}
+                  </h3>
+                  
+                  {/* Color Swatches */}
+                  <div className="flex items-center gap-1.5">
+                    {model.colors.map((color, idx) => (
+                      <div
+                        key={idx}
+                        className="w-4 h-4 rounded-full border border-slate-700"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
