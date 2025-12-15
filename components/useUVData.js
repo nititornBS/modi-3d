@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { getDefaultModelPath } from "@/app/studio/modelMapping";
 
 
 // Export the extract function for use outside hooks
@@ -155,7 +156,11 @@ export function generateProceduralUV(modelType) {
 // These hooks are kept for potential future use inside Canvas context
 // For now, we'll extract UV data directly from model references
 export function useShirtUVData() {
-  const { scene } = useGLTF("/3d-models/t_shirt.glb");
+  // Get model path from centralized mapping
+  const modelPath = getDefaultModelPath("shirt") || "/3d-models/t_shirt.glb";
+  // NOTE: If t_shirt.glb file doesn't exist, this hook will error
+  // Add the file to public/3d-models/ or update the mapping
+  const { scene } = useGLTF(modelPath);
   
   return useMemo(() => {
     const cloned = scene.clone();
@@ -164,7 +169,9 @@ export function useShirtUVData() {
 }
 
 export function useCupUVData() {
-  const obj = useLoader(OBJLoader, "/3d-models/Tea_Mug.obj");
+  // Get model path from centralized mapping
+  const modelPath = getDefaultModelPath("cup") || "/3d-models/Cups/teamugobj.obj";
+  const obj = useLoader(OBJLoader, modelPath);
   
   return useMemo(() => {
     const cloned = obj.clone();

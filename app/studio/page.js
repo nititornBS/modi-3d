@@ -326,6 +326,75 @@ function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName =
       }
     }
     
+    // Generate UV coordinates if they don't exist (needed for texture mapping)
+    cloned.traverse((child) => {
+      if (child.isMesh && child.geometry) {
+        const geometry = child.geometry;
+        if (!geometry.hasAttribute("uv")) {
+          // Generate UV coordinates using Three.js geometry utilities
+          // For cylindrical objects like bottles, we'll use a cylindrical unwrap
+          geometry.computeBoundingBox();
+          const box = geometry.boundingBox;
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          
+          // Check if it's roughly cylindrical (height > width/depth)
+          const isCylindrical = size.y > Math.max(size.x, size.z) * 0.8;
+          
+          if (isCylindrical) {
+            // Cylindrical UV mapping
+            const positionAttribute = geometry.getAttribute("position");
+            const uvCoords = [];
+            for (let i = 0; i < positionAttribute.count; i++) {
+              const x = positionAttribute.getX(i);
+              const y = positionAttribute.getY(i);
+              const z = positionAttribute.getZ(i);
+              
+              // Calculate angle around Y axis
+              const angle = Math.atan2(z, x) / (2 * Math.PI) + 0.5;
+              // Map Y coordinate to V
+              const v = (y - box.min.y) / size.y;
+              
+              uvCoords.push(angle, 1 - v);
+            }
+            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvCoords, 2));
+          } else {
+            // Box-like UV mapping
+            const positionAttribute = geometry.getAttribute("position");
+            const uvCoords = [];
+            for (let i = 0; i < positionAttribute.count; i++) {
+              const x = positionAttribute.getX(i);
+              const y = positionAttribute.getY(i);
+              const z = positionAttribute.getZ(i);
+              
+              // Determine dominant axis for each face
+              const absX = Math.abs(x - box.min.x - size.x / 2);
+              const absY = Math.abs(y - box.min.y - size.y / 2);
+              const absZ = Math.abs(z - box.min.z - size.z / 2);
+              
+              let u, v;
+              if (absX > absY && absX > absZ) {
+                // X-dominant face
+                u = (z - box.min.z) / size.z;
+                v = (y - box.min.y) / size.y;
+              } else if (absY > absZ) {
+                // Y-dominant face
+                u = (x - box.min.x) / size.x;
+                v = (z - box.min.z) / size.z;
+              } else {
+                // Z-dominant face
+                u = (x - box.min.x) / size.x;
+                v = (y - box.min.y) / size.y;
+              }
+              
+              uvCoords.push(u, 1 - v);
+            }
+            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvCoords, 2));
+          }
+        }
+      }
+    });
+    
     return cloned;
   }, [obj, selectedGroupName]);
   
@@ -490,10 +559,17 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
   
   // Calculate appropriate camera distance based on model
   const cameraDistance = useMemo(() => {
+    // Give some models a bit more distance so they don't start too zoomed in
+    if (modelInfo?.id === "box-2") {
+      // Pizza box – sit the camera further back
+      return 11;
+    }
+
     // If paper_cup model, use a larger distance to avoid being inside
-    if (modelInfo?.file?.includes('paper_cup')) {
+    if (modelInfo?.file?.includes("paper_cup")) {
       return 8;
     }
+
     return 5;
   }, [modelInfo]);
 

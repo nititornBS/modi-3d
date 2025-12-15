@@ -5,9 +5,12 @@ import * as THREE from "three";
 import { Canvas, useLoader } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Environment } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { getDefaultModelPath } from "@/app/studio/modelMapping";
 
 function CupModel() {
-  const obj = useLoader(OBJLoader, "/3d-models/Tea_Mug.obj");
+  // Get model path from centralized mapping
+  const modelPath = getDefaultModelPath("cup") || "/3d-models/Cups/teamugobj.obj";
+  const obj = useLoader(OBJLoader, modelPath);
   
   // Clone the object to avoid mutating the original
   const clonedObj = useMemo(() => {

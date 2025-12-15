@@ -3,7 +3,7 @@
 import { useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { MODEL_FILES, getAllModelFiles } from "../studio/modelMapping";
+import { getAllModelFiles, getCategoryInfo } from "../studio/modelMapping";
 
 const CATEGORIES = [
   { id: "all", name: "All", icon: "📦" },
@@ -13,50 +13,41 @@ const CATEGORIES = [
   { id: "shirt", name: "Apparel", icon: "👕" },
 ];
 
-const ALL_MODELS = [
-  // Boxes
-  { id: "box-1", name: "Flip top gift box mockup", category: "box", colors: ["#8B4513", "#FFFFFF", "#FFD700"], isNew: true },
-  { id: "box-2", name: "Tuck end software box mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
-  { id: "box-3", name: "Square box mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
-  { id: "box-4", name: "Medicine box mockup", category: "box", colors: ["#0066CC", "#FFFFFF"] },
-  { id: "box-5", name: "Tuck end mailer box packaging mockup", category: "box", colors: ["#FFFFFF", "#FFD700"] },
-  { id: "box-6", name: "Christmas gift box mockup", category: "box", colors: ["#8B4513"], isNew: true },
-  { id: "box-7", name: "Gift box with window mockup", category: "box", colors: ["#228B22"], isNew: true },
-  { id: "box-8", name: "Star shaped pillow box mockup", category: "box", colors: ["#DC143C"], isNew: true },
-  { id: "box-9", name: "Square shipping box mockup", category: "box", colors: ["#8B4513"] },
-  { id: "box-10", name: "Flip top magnetic gift box mockup", category: "box", colors: ["#FFFFFF"] },
-  
-  // Bottles
-  { id: "bottle-1", name: "Standard water bottle mockup", category: "bottle", colors: ["#00CED1", "#FFFFFF"] },
-  { id: "bottle-2", name: "Sports bottle mockup", category: "bottle", colors: ["#0066CC", "#FFFFFF"] },
-  { id: "bottle-3", name: "Glass bottle mockup", category: "bottle", colors: ["#8B4513", "#FFFFFF"] },
-  { id: "bottle-4", name: "Wine bottle mockup", category: "bottle", colors: ["#2F1B14"] },
-  
-  // Cups
-  { id: "cup-1", name: "Classic ceramic cup mockup", category: "cup", colors: ["#FFFFFF", "#F5F5DC"] },
-  { id: "cup-2", name: "Travel mug mockup", category: "cup", colors: ["#000000", "#FFFFFF"] },
-  { id: "cup-3", name: "Coffee mug with handle mockup", category: "cup", colors: ["#8B4513", "#FFFFFF"] },
-  
-  // Apparel
-  { id: "shirt-1", name: "Classic crew neck T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#000000"] },
-  { id: "shirt-2", name: "V-neck T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#808080"] },
-  { id: "shirt-3", name: "Long sleeve T-shirt mockup", category: "shirt", colors: ["#FFFFFF", "#0066CC"] },
-];
+// Optional: Additional metadata for models (colors, isNew, etc.)
+// This can be extended in the future or moved to modelMapping.js
+const MODEL_METADATA = {
+  "cup-1": { colors: ["#FFFFFF", "#F5F5DC"] },
+  "cup-2": { colors: ["#000000", "#FFFFFF"] },
+  "cup-3": { colors: ["#8B4513", "#FFFFFF"] },
+  // Add more metadata as needed
+};
 
 function ModelsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
 
+  // Get all models from centralized mapping and merge with metadata
+  const allModels = useMemo(() => {
+    const modelsFromMapping = getAllModelFiles();
+    return modelsFromMapping.map(model => ({
+      ...model,
+      // Merge with additional metadata if available
+      ...(MODEL_METADATA[model.id] || {}),
+      // Use displayName as the name for display
+      name: model.displayName || model.name,
+    }));
+  }, []);
+
   const filteredModels = useMemo(() => {
     if (selectedCategory === "all") {
-      return ALL_MODELS;
+      return allModels;
     }
-    return ALL_MODELS.filter((model) => model.category === selectedCategory);
-  }, [selectedCategory]);
+    return allModels.filter((model) => model.category === selectedCategory);
+  }, [selectedCategory, allModels]);
 
   const handleModelClick = (modelId) => {
-    const model = ALL_MODELS.find((m) => m.id === modelId);
+    const model = allModels.find((m) => m.id === modelId);
     if (model) {
       router.push(`/studio?model=${model.category}&variation=${modelId}`);
     }
@@ -128,8 +119,8 @@ function ModelsPageContent() {
               {CATEGORIES.map((category) => {
                 const isSelected = selectedCategory === category.id;
                 const count = category.id === "all" 
-                  ? ALL_MODELS.length 
-                  : ALL_MODELS.filter((m) => m.category === category.id).length;
+                  ? allModels.length 
+                  : allModels.filter((m) => m.category === category.id).length;
                 
                 return (
                   <button
@@ -184,10 +175,12 @@ function ModelsPageContent() {
                 {/* Model Preview Placeholder */}
                 <div className="aspect-square bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center border-b border-slate-800">
                   <div className="text-4xl opacity-60">
-                    {model.category === "box" && "📦"}
-                    {model.category === "bottle" && "🍼"}
-                    {model.category === "cup" && "☕"}
-                    {model.category === "shirt" && "👕"}
+                    {model.icon || (
+                      model.category === "box" ? "📦" :
+                      model.category === "bottle" ? "🍼" :
+                      model.category === "cup" ? "☕" :
+                      model.category === "shirt" ? "👕" : "📦"
+                    )}
                   </div>
                 </div>
 
@@ -203,15 +196,17 @@ function ModelsPageContent() {
                   </h3>
                   
                   {/* Color Swatches */}
-                  <div className="flex items-center gap-1.5">
-                    {model.colors.map((color, idx) => (
-                      <div
-                        key={idx}
-                        className="w-4 h-4 rounded-full border border-slate-700"
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
+                  {model.colors && model.colors.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      {model.colors.map((color, idx) => (
+                        <div
+                          key={idx}
+                          className="w-4 h-4 rounded-full border border-slate-700"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </button>
             ))}

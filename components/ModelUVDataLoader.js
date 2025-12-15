@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { generateProceduralUV, extractUVData } from "./useUVData";
-import { getModelsByCategory, getModelById } from "@/app/studio/modelMapping";
+import { getModelsByCategory, getModelById, getDefaultModelPath } from "@/app/studio/modelMapping";
 
 export default function ModelUVDataLoader({ selectedModel, selectedVariation, children }) {
   const [uvData, setUvData] = useState(null);
@@ -17,14 +17,6 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
 
     const loadUVData = async () => {
       try {
-        // For procedural models (bottle, box), generate UV data directly
-        if (selectedModel === "bottle" || selectedModel === "box") {
-          const data = generateProceduralUV(selectedModel);
-          setUvData(data);
-          setLoading(false);
-          return;
-        }
-
         // Get model info
         const modelInfo = selectedVariation 
           ? getModelById(selectedVariation)
@@ -33,17 +25,21 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
         if (!modelInfo || !modelInfo.file) {
           // Fallback to default models
           if (selectedModel === "shirt") {
-            const loader = new GLTFLoader();
-            const gltf = await new Promise((resolve, reject) => {
-              loader.load("/3d-models/t_shirt.glb", resolve, undefined, reject);
-            });
-            const cloned = gltf.scene.clone();
-            const data = extractUVData(cloned);
-            setUvData(data);
+            // T-shirt model file not found - skipping fallback
+            // const loader = new GLTFLoader();
+            // const gltf = await new Promise((resolve, reject) => {
+            //   loader.load("/3d-models/t_shirt.glb", resolve, undefined, reject);
+            // });
+            // const cloned = gltf.scene.clone();
+            // const data = extractUVData(cloned);
+            // setUvData(data);
+            setUvData(null);
           } else if (selectedModel === "cup") {
+            // Get model path from centralized mapping
+            const modelPath = getDefaultModelPath("cup") || "/3d-models/Cups/teamugobj.obj";
             const loader = new OBJLoader();
             const obj = await new Promise((resolve, reject) => {
-              loader.load("/3d-models/Tea_Mug.obj", resolve, undefined, reject);
+              loader.load(modelPath, resolve, undefined, reject);
             });
             const cloned = obj.clone();
             const data = extractUVData(cloned);
