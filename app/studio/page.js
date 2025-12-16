@@ -5,11 +5,14 @@ import * as THREE from "three";
 import { Canvas, useLoader } from "@react-three/fiber";
 import { Environment, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter";
+import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import UVEditor from "@/components/UVEditor";
 import UVEditorModal from "@/components/UVEditorModal";
 import ModelUVDataLoader from "@/components/ModelUVDataLoader";
+import { useAuth } from "@/contexts/AuthContext";
 import { MODEL_FILES, getModelById, getModelsByCategory } from "./modelMapping";
 
 const MODEL_OPTIONS = [
@@ -18,6 +21,70 @@ const MODEL_OPTIONS = [
   { id: "bottle", label: "Bottle", icon: "🍼" },
   { id: "box", label: "Box", icon: "📦" },
 ];
+
+// Helper function to calculate the visual center (bounding box center) of the object
+// This calculates the center in local space for accurate geometric centering
+function calculateVisualCenter(object) {
+  const box = new THREE.Box3();
+  let hasVisibleMeshes = false;
+  
+  // Calculate bounding box from geometry in local space (relative to object)
+  // This ensures we get the true geometric center before any transforms
+  object.traverse((child) => {
+    if (child.isMesh && child.visible && child.geometry) {
+      const geometry = child.geometry;
+      
+      // Compute bounding box for this geometry if not already computed
+      if (!geometry.boundingBox) {
+        geometry.computeBoundingBox();
+      }
+      
+      if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
+        const geometryBox = geometry.boundingBox.clone();
+        
+        // Get the child's local transform (position, rotation, scale relative to parent)
+        const localMatrix = new THREE.Matrix4();
+        localMatrix.compose(
+          child.position,
+          child.quaternion,
+          child.scale
+        );
+        
+        // Transform the geometry bounding box by the child's local transform
+        geometryBox.applyMatrix4(localMatrix);
+        
+        if (!hasVisibleMeshes) {
+          box.copy(geometryBox);
+          hasVisibleMeshes = true;
+        } else {
+          // Expand box to include this geometry's bounding box
+          box.expandByPoint(geometryBox.min);
+          box.expandByPoint(geometryBox.max);
+        }
+      }
+    }
+  });
+  
+  // Return the center of the bounding box in local space
+  if (hasVisibleMeshes && !box.isEmpty()) {
+    return box.getCenter(new THREE.Vector3());
+  }
+  
+  // Fallback: use setFromObject (this works in local space when object is at origin)
+  const fallbackBox = new THREE.Box3();
+  object.traverse((child) => {
+    if (child.isMesh && child.visible) {
+      fallbackBox.expandByObject(child);
+    }
+  });
+  
+  if (!fallbackBox.isEmpty()) {
+    return fallbackBox.getCenter(new THREE.Vector3());
+  }
+  
+  // Last fallback: return origin
+  return new THREE.Vector3(0, 0, 0);
+}
 
 // Generate MODEL_VARIATIONS from MODEL_FILES
 const MODEL_VARIATIONS = {};
@@ -36,41 +103,13 @@ function ShirtModel({ logoTexture, baseColor }) {
   const clonedScene = useMemo(() => {
     const cloned = scene.clone();
     
-    // Calculate bounding box only for visible meshes
-    const box = new THREE.Box3();
-    let hasVisibleMeshes = false;
-    let boxInitialized = false;
+    // Calculate visual center (bounding box center) for better screen centering
+    const visualCenter = calculateVisualCenter(cloned);
     
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible !== false) {
-        const childBox = new THREE.Box3().setFromObject(child);
-        if (childBox.isEmpty() === false) {
-          if (!boxInitialized) {
-            box.copy(childBox);
-            boxInitialized = true;
-          } else {
-            box.expandByPoint(childBox.min);
-            box.expandByPoint(childBox.max);
-          }
-          hasVisibleMeshes = true;
-        }
-      }
-    });
-    
-    // Center the model based on visible meshes
-    if (hasVisibleMeshes) {
-      const center = box.getCenter(new THREE.Vector3());
-    cloned.position.x = -center.x;
-    cloned.position.y = -center.y;
-    cloned.position.z = -center.z;
-    } else {
-      // Fallback: center based on all meshes
-      const fallbackBox = new THREE.Box3().setFromObject(cloned);
-      const center = fallbackBox.getCenter(new THREE.Vector3());
-      cloned.position.x = -center.x;
-      cloned.position.y = -center.y;
-      cloned.position.z = -center.z;
-    }
+    // Center the model at origin
+    cloned.position.x = -visualCenter.x;
+    cloned.position.y = -visualCenter.y;
+    cloned.position.z = -visualCenter.z;
     
     return cloned;
   }, [scene]);
@@ -103,41 +142,13 @@ function CupModel({ logoTexture, baseColor }) {
   const clonedObj = useMemo(() => {
     const cloned = obj.clone();
     
-    // Calculate bounding box only for visible meshes
-    const box = new THREE.Box3();
-    let hasVisibleMeshes = false;
-    let boxInitialized = false;
+    // Calculate visual center (bounding box center) for better screen centering
+    const visualCenter = calculateVisualCenter(cloned);
     
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible !== false) {
-        const childBox = new THREE.Box3().setFromObject(child);
-        if (childBox.isEmpty() === false) {
-          if (!boxInitialized) {
-            box.copy(childBox);
-            boxInitialized = true;
-          } else {
-            box.expandByPoint(childBox.min);
-            box.expandByPoint(childBox.max);
-          }
-          hasVisibleMeshes = true;
-        }
-      }
-    });
-    
-    // Center the model based on visible meshes
-    if (hasVisibleMeshes) {
-      const center = box.getCenter(new THREE.Vector3());
-    cloned.position.x = -center.x;
-    cloned.position.y = -center.y;
-    cloned.position.z = -center.z;
-    } else {
-      // Fallback: center based on all meshes
-      const fallbackBox = new THREE.Box3().setFromObject(cloned);
-      const center = fallbackBox.getCenter(new THREE.Vector3());
-      cloned.position.x = -center.x;
-      cloned.position.y = -center.y;
-      cloned.position.z = -center.z;
-    }
+    // Center the model at origin
+    cloned.position.x = -visualCenter.x;
+    cloned.position.y = -visualCenter.y;
+    cloned.position.z = -visualCenter.z;
     
     return cloned;
   }, [obj]);
@@ -259,71 +270,34 @@ function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName =
       });
     }
     
-    // Calculate bounding box only for visible meshes
-    const box = new THREE.Box3();
-    let hasVisibleMeshes = false;
-    let boxInitialized = false;
+    // Calculate visual center (bounding box center) for better screen centering
+    const visualCenter = calculateVisualCenter(cloned);
     
+    // Check if model needs scaling (calculate bounding box for size check)
+    const box = new THREE.Box3();
     cloned.traverse((child) => {
       if (child.isMesh && child.visible) {
-        const childBox = new THREE.Box3().setFromObject(child);
-        if (childBox.isEmpty() === false) {
-          if (!boxInitialized) {
-            box.copy(childBox);
-            boxInitialized = true;
-          } else {
-            box.expandByPoint(childBox.min);
-            box.expandByPoint(childBox.max);
-          }
-          hasVisibleMeshes = true;
-        }
+        box.expandByObject(child);
       }
     });
     
-    // Center the model based on visible meshes
-    if (hasVisibleMeshes) {
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z);
-      
-      // Scale down if model is too large (e.g., paper_cup.obj might be in a different unit system)
-      let scaleFactor = 1;
-      if (maxSize > 200) {
-        // If model is very large, scale it down
-        scaleFactor = 200 / maxSize;
-        cloned.scale.multiplyScalar(scaleFactor);
-        // Recalculate bounding box after scaling
-        box.setFromObject(cloned);
-        const newCenter = box.getCenter(new THREE.Vector3());
-        cloned.position.x = -newCenter.x;
-        cloned.position.y = -newCenter.y;
-        cloned.position.z = -newCenter.z;
-      } else {
-        cloned.position.x = -center.x;
-        cloned.position.y = -center.y;
-        cloned.position.z = -center.z;
-      }
+    const size = box.getSize(new THREE.Vector3());
+    const maxSize = Math.max(size.x, size.y, size.z);
+    
+    // Scale down if model is too large (e.g., paper_cup.obj might be in a different unit system)
+    if (maxSize > 200) {
+      const scaleFactor = 200 / maxSize;
+      cloned.scale.multiplyScalar(scaleFactor);
+      // Recalculate visual center after scaling
+      const newVisualCenter = calculateVisualCenter(cloned);
+      cloned.position.x = -newVisualCenter.x;
+      cloned.position.y = -newVisualCenter.y;
+      cloned.position.z = -newVisualCenter.z;
     } else {
-      // Fallback: center based on all meshes
-      const fallbackBox = new THREE.Box3().setFromObject(cloned);
-      const center = fallbackBox.getCenter(new THREE.Vector3());
-      const size = fallbackBox.getSize(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z);
-      
-      // Scale down if model is too large
-      if (maxSize > 200) {
-        const scaleFactor = 200 / maxSize;
-        cloned.scale.multiplyScalar(scaleFactor);
-        const newBox = new THREE.Box3().setFromObject(cloned);
-        const newCenter = newBox.getCenter(new THREE.Vector3());
-        cloned.position.x = -newCenter.x;
-        cloned.position.y = -newCenter.y;
-        cloned.position.z = -newCenter.z;
-      } else {
-        cloned.position.x = -center.x;
-        cloned.position.y = -center.y;
-        cloned.position.z = -center.z;
-      }
+      // Center the model at origin using visual center
+      cloned.position.x = -visualCenter.x;
+      cloned.position.y = -visualCenter.y;
+      cloned.position.z = -visualCenter.z;
     }
     
     // Generate UV coordinates if they don't exist (needed for texture mapping)
@@ -430,41 +404,13 @@ function DynamicGLBModel({ filePath, logoTexture, baseColor }) {
   const clonedScene = useMemo(() => {
     const cloned = scene.clone();
     
-    // Calculate bounding box only for visible meshes
-    const box = new THREE.Box3();
-    let hasVisibleMeshes = false;
-    let boxInitialized = false;
+    // Calculate visual center (bounding box center) for better screen centering
+    const visualCenter = calculateVisualCenter(cloned);
     
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible !== false) {
-        const childBox = new THREE.Box3().setFromObject(child);
-        if (childBox.isEmpty() === false) {
-          if (!boxInitialized) {
-            box.copy(childBox);
-            boxInitialized = true;
-          } else {
-            box.expandByPoint(childBox.min);
-            box.expandByPoint(childBox.max);
-          }
-          hasVisibleMeshes = true;
-        }
-      }
-    });
-    
-    // Center the model based on visible meshes
-    if (hasVisibleMeshes) {
-      const center = box.getCenter(new THREE.Vector3());
-      cloned.position.x = -center.x;
-      cloned.position.y = -center.y;
-      cloned.position.z = -center.z;
-    } else {
-      // Fallback: center based on all meshes
-      const fallbackBox = new THREE.Box3().setFromObject(cloned);
-      const center = fallbackBox.getCenter(new THREE.Vector3());
-      cloned.position.x = -center.x;
-      cloned.position.y = -center.y;
-      cloned.position.z = -center.z;
-    }
+    // Center the model at origin
+    cloned.position.x = -visualCenter.x;
+    cloned.position.y = -visualCenter.y;
+    cloned.position.z = -visualCenter.z;
     
     return cloned;
   }, [scene]);
@@ -657,6 +603,7 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
 function StudioPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const urlModel = searchParams.get("model");
   const urlVariation = searchParams.get("variation");
 
@@ -671,6 +618,8 @@ function StudioPageContent() {
   const [baseColor, setBaseColor] = useState("#ffffff");
   const [autoRotate, setAutoRotate] = useState(false);
   const [activeTab, setActiveTab] = useState("edit"); // "edit" or "model"
+  const canvasRef = useRef(null);
+  const sceneRef = useRef(null);
 
 
   useEffect(() => {
@@ -744,6 +693,265 @@ function StudioPageContent() {
     setSelectedComponent(null); // Reset component selection when changing models
     router.push(`/studio?model=${modelId}&variation=${variationId || ""}`);
   };
+
+  // Export function to download model with texture
+  const handleExport = useCallback(async () => {
+    // Check if user is authenticated
+    if (!isAuthenticated()) {
+      const currentPath = window.location.pathname + window.location.search;
+      router.push(`/login?returnUrl=${encodeURIComponent(currentPath)}`);
+      return;
+    }
+
+    if (!sceneRef.current) {
+      alert("Model not ready. Please wait for the model to load.");
+      return;
+    }
+
+    try {
+      const modelInfo = selectedVariation 
+        ? getModelById(selectedVariation) 
+        : getModelsByCategory(selectedModel)[0];
+      
+      if (!modelInfo) {
+        alert("No model selected.");
+        return;
+      }
+
+      // Get the scene from the ref
+      const scene = sceneRef.current;
+      
+      // Find the model in the scene (skip lights, camera, environment, plane, etc.)
+      let modelObject = null;
+      const modelCandidates = [];
+      
+      scene.traverse((child) => {
+        // Skip lights, cameras, and helper objects
+        if (child.isLight || child.isCamera || child.isHelper) {
+          return;
+        }
+        
+        // Skip the shadow plane
+        if (child.name && child.name.includes("shadow")) {
+          return;
+        }
+        
+        // Collect potential model objects
+        if (child.isMesh || (child.isGroup && child.children.length > 0)) {
+          // Check if it has geometry (is a mesh) or is a group with meshes
+          if (child.isMesh || (child.isGroup && child.children.some(c => c.isMesh))) {
+            modelCandidates.push(child);
+          }
+        }
+      });
+
+      // Find the root model object (usually the one that's a direct child of scene or a group)
+      if (modelCandidates.length > 0) {
+        // Prefer groups that contain meshes, or the largest group
+        modelObject = modelCandidates.find(c => c.isGroup && c.children.some(ch => ch.isMesh)) 
+          || modelCandidates.find(c => c.isGroup)
+          || modelCandidates[0];
+        
+        // If we found a mesh, try to get its parent group
+        if (modelObject && modelObject.isMesh && modelObject.parent && modelObject.parent.isGroup) {
+          modelObject = modelObject.parent;
+        }
+      }
+
+      if (!modelObject) {
+        alert("Could not find model in scene. Please ensure the model is loaded.");
+        return;
+      }
+
+      // Clone the model to avoid modifying the original
+      const clonedModel = modelObject.clone(true);
+      
+      // Ensure texture is applied to all meshes in the cloned model
+      clonedModel.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            if (logoTexture) {
+              material.map = logoTexture;
+              material.needsUpdate = true;
+            } else {
+              // Apply base color if no texture
+              material.color = new THREE.Color(baseColor);
+              material.needsUpdate = true;
+            }
+          });
+        }
+      });
+
+      // Helper to get texture as blob for embedding
+      const getTextureBlob = () => {
+        return new Promise((resolve) => {
+          if (logoTexture && logoTexture.image) {
+            const textureImage = logoTexture.image;
+            if (textureImage instanceof HTMLCanvasElement) {
+              textureImage.toBlob((blob) => {
+                resolve(blob);
+              }, "image/png");
+            } else if (textureImage instanceof Image) {
+              const canvas = document.createElement("canvas");
+              canvas.width = textureImage.width || 1024;
+              canvas.height = textureImage.height || 1024;
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(textureImage, 0, 0);
+              canvas.toBlob((blob) => {
+                resolve(blob);
+              }, "image/png");
+            } else {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        });
+      };
+
+      // Export model based on type
+      if (modelInfo.type === "obj") {
+        // For OBJ format, we need separate files (OBJ, MTL, and texture)
+        // Export OBJ
+        const objExporter = new OBJExporter();
+        let objString = objExporter.parse(clonedModel);
+        
+        // Add MTL reference at the beginning of OBJ file
+        const mtlFileName = `${modelInfo.id || "model"}.mtl`;
+        const textureFileName = `${modelInfo.id || "model"}_texture.png`;
+        objString = `mtllib ${mtlFileName}\n` + objString;
+        
+        // Create MTL file for texture
+        let mtlString = `# MTL file for ${modelInfo.id || "model"}\n`;
+        mtlString += `newmtl material1\n`;
+        mtlString += `Ka 1.000 1.000 1.000\n`;
+        mtlString += `Kd 1.000 1.000 1.000\n`;
+        mtlString += `Ks 0.000 0.000 0.000\n`;
+        if (logoTexture) {
+          mtlString += `map_Kd ${textureFileName}\n`;
+        } else {
+          const color = new THREE.Color(baseColor);
+          mtlString += `Kd ${color.r.toFixed(3)} ${color.g.toFixed(3)} ${color.b.toFixed(3)}\n`;
+        }
+        mtlString += `Ns 0.000\n`;
+        mtlString += `illum 1\n`;
+
+        // Get texture blob
+        const textureBlob = await getTextureBlob();
+
+        // Download all files in sequence
+        // 1. OBJ file
+        const objBlob = new Blob([objString], { type: "text/plain" });
+        const objUrl = URL.createObjectURL(objBlob);
+        const objLink = document.createElement("a");
+        objLink.href = objUrl;
+        objLink.download = `${modelInfo.id || "model"}.obj`;
+        document.body.appendChild(objLink);
+        objLink.click();
+        document.body.removeChild(objLink);
+        URL.revokeObjectURL(objUrl);
+
+        // 2. MTL file
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const mtlBlob = new Blob([mtlString], { type: "text/plain" });
+        const mtlUrl = URL.createObjectURL(mtlBlob);
+        const mtlLink = document.createElement("a");
+        mtlLink.href = mtlUrl;
+        mtlLink.download = mtlFileName;
+        document.body.appendChild(mtlLink);
+        mtlLink.click();
+        document.body.removeChild(mtlLink);
+        URL.revokeObjectURL(mtlUrl);
+
+        // 3. Texture file (if exists)
+        if (textureBlob) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const textureUrl = URL.createObjectURL(textureBlob);
+          const textureLink = document.createElement("a");
+          textureLink.href = textureUrl;
+          textureLink.download = textureFileName;
+          document.body.appendChild(textureLink);
+          textureLink.click();
+          document.body.removeChild(textureLink);
+          URL.revokeObjectURL(textureUrl);
+        }
+        
+        setTimeout(() => {
+          alert("Export completed! Model with texture has been downloaded.");
+        }, 200);
+
+      } else if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
+        // Export GLB/GLTF with embedded texture
+        const gltfExporter = new GLTFExporter();
+        
+        gltfExporter.parse(
+          clonedModel,
+          (result) => {
+            if (result instanceof ArrayBuffer) {
+              // Binary GLB (texture is embedded)
+              const blob = new Blob([result], { type: "application/octet-stream" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `${modelInfo.id || "model"}.glb`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+              setTimeout(() => {
+                alert("Export completed! Model with embedded texture has been downloaded.");
+              }, 100);
+            } else {
+              // JSON GLTF (texture is embedded)
+              const jsonString = JSON.stringify(result, null, 2);
+              const blob = new Blob([jsonString], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `${modelInfo.id || "model"}.gltf`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+              setTimeout(() => {
+                alert("Export completed! Model with embedded texture has been downloaded.");
+              }, 100);
+            }
+          },
+          {
+            binary: modelInfo.type === "glb",
+            includeCustomExtensions: true,
+            embedImages: true, // Embed textures in the model file
+          }
+        );
+      } else {
+        // Fallback: export as OBJ
+        const objExporter = new OBJExporter();
+        const objString = objExporter.parse(clonedModel);
+        const blob = new Blob([objString], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${modelInfo.id || "model"}.obj`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      // Success message for GLB/GLTF exports
+      if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
+        setTimeout(() => {
+          alert("Export completed! Model file has been downloaded.");
+        }, 500);
+      }
+
+    } catch (error) {
+      console.error("Export error:", error);
+      alert("Error exporting model: " + error.message);
+    }
+  }, [selectedModel, selectedVariation, logoTexture, baseColor, isAuthenticated, router]);
 
   const currentVariations = MODEL_VARIATIONS[selectedModel] || [];
 
@@ -1134,7 +1342,7 @@ function StudioPageContent() {
         {/* Right Side - 3D Viewer (Full Width) */}
         <div className="ml-0 lg:ml-[36rem] h-[calc(100vh-73px)] pb-20 lg:pb-0">
           <div className="h-full relative">
-            <div className="absolute top-4 right-4 z-10">
+            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
               <label className="flex items-center gap-2 cursor-pointer bg-slate-900/90 backdrop-blur-md border border-slate-800/50 rounded-xl px-4 py-2.5 shadow-lg hover:bg-slate-900 transition-colors group">
                 <input
                   type="checkbox"
@@ -1147,14 +1355,27 @@ function StudioPageContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </label>
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold px-4 py-2.5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 group"
+              >
+                <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span className="text-xs font-medium">Export</span>
+              </button>
             </div>
               <Canvas
+                ref={canvasRef}
                 shadows
                 dpr={[1, 2]}
               gl={{ 
                 preserveDrawingBuffer: true,
                 antialias: true,
                 powerPreference: "high-performance"
+              }}
+              onCreated={({ scene }) => {
+                sceneRef.current = scene;
               }}
               className="w-full h-full"
             >

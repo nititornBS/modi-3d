@@ -1,31 +1,11 @@
 import Link from "next/link";
 import CupViewer from "@/components/CupViewer";
+import Navbar from "@/components/Navbar";
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <header className="border-b border-slate-800/80 bg-slate-950/80/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-4 sm:gap-6">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-2xl bg-gradient-to-tr from-sky-500 via-cyan-400 to-emerald-400 shadow-lg shadow-sky-500/40 flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0">
-              M3D
-            </div>
-            <div className="min-w-0">
-              <p className="text-base sm:text-xl font-semibold tracking-tight truncate sm:whitespace-normal">
-                Mockup 3D Studio
-              </p>
-              <p className="text-xs sm:text-sm text-slate-400 hidden sm:block">
-                Fast product mockups in your browser
-              </p>
-            </div>
-          </div>
-
-          <button className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 sm:px-5 py-2 text-xs sm:text-sm font-medium text-slate-100 shadow-sm hover:border-sky-500 hover:text-sky-100 transition flex-shrink-0">
-            <span className="hidden sm:inline">Log in</span>
-            <span className="sm:hidden">Login</span>
-          </button>
-        </div>
-      </header>
+      <Navbar subtitle="Fast product mockups in your browser" />
 
       <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20 grid gap-8 sm:gap-12 lg:gap-14 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-center">
@@ -189,5 +169,3 @@ export default function LandingPage() {
     </main>
   );
 }
-
-
