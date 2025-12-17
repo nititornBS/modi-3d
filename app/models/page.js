@@ -27,6 +27,7 @@ function ModelsPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") || "all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Get all models from centralized mapping and merge with metadata
   const allModels = useMemo(() => {
@@ -41,11 +42,32 @@ function ModelsPageContent() {
   }, []);
 
   const filteredModels = useMemo(() => {
-    if (selectedCategory === "all") {
-      return allModels;
-    }
-    return allModels.filter((model) => model.category === selectedCategory);
-  }, [selectedCategory, allModels]);
+    // First filter by category
+    let models =
+      selectedCategory === "all"
+        ? allModels
+        : allModels.filter((model) => model.category === selectedCategory);
+
+    // Then filter by search query (case-insensitive)
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return models;
+
+    return models.filter((model) => {
+      const name = (model.name || "").toLowerCase();
+      const displayName = (model.displayName || "").toLowerCase();
+      const description = (model.description || "").toLowerCase();
+      const id = (model.id || "").toLowerCase();
+      const category = (model.category || "").toLowerCase();
+
+      return (
+        name.includes(query) ||
+        displayName.includes(query) ||
+        description.includes(query) ||
+        id.includes(query) ||
+        category.includes(query)
+      );
+    });
+  }, [selectedCategory, allModels, searchQuery]);
 
   const handleModelClick = (modelId) => {
     const model = allModels.find((m) => m.id === modelId);
@@ -86,7 +108,9 @@ function ModelsPageContent() {
             <div className="relative max-w-2xl">
               <input
                 type="text"
-                placeholder="Try 4+ words to describe..."
+                placeholder="Search by name, type, or description..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-2.5 sm:py-3 pl-10 pr-4 text-sm bg-slate-900/70 border border-slate-800 rounded-lg text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
@@ -132,64 +156,81 @@ function ModelsPageContent() {
 
           {/* Model Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-            {filteredModels.map((model) => (
-              <button
-                key={model.id}
-                onClick={() => handleModelClick(model.id)}
-                className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-sky-500/50 hover:bg-slate-900 transition-all duration-200 text-left"
-              >
-                {/* 3D Badge */}
-                <div className="absolute top-2 left-2 z-10 bg-slate-950/90 text-sky-400 text-[10px] font-semibold px-2 py-0.5 rounded border border-sky-500/30">
-                  3D
-                </div>
-                
-                {/* Edit Icon */}
-                <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="bg-slate-950 rounded-full p-1.5 shadow-lg border border-slate-700">
-                    <svg className="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </div>
-                </div>
+            {filteredModels.map((model) => {
+              const fallbackIcon =
+                model.icon ||
+                (model.category === "box"
+                  ? "📦"
+                  : model.category === "bottle"
+                  ? "🍼"
+                  : model.category === "cup"
+                  ? "☕"
+                  : model.category === "shirt"
+                  ? "👕"
+                  : "📦");
 
-                {/* Model Preview Placeholder */}
-                <div className="aspect-square bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center border-b border-slate-800">
-                  <div className="text-4xl opacity-60">
-                    {model.icon || (
-                      model.category === "box" ? "📦" :
-                      model.category === "bottle" ? "🍼" :
-                      model.category === "cup" ? "☕" :
-                      model.category === "shirt" ? "👕" : "📦"
+              return (
+                <button
+                  key={model.id}
+                  onClick={() => handleModelClick(model.id)}
+                  className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-sky-500/50 hover:bg-slate-900 transition-all duration-200 text-left"
+                >
+                  {/* 3D Badge */}
+                  <div className="absolute top-2 left-2 z-10 bg-slate-950/90 text-sky-400 text-[10px] font-semibold px-2 py-0.5 rounded border border-sky-500/30">
+                    3D
+                  </div>
+                  
+                  {/* Edit Icon */}
+                  <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-slate-950 rounded-full p-1.5 shadow-lg border border-slate-700">
+                      <svg className="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Model Preview Image */}
+                  <div className="aspect-square bg-slate-900 border-b border-slate-800 overflow-hidden flex items-center justify-center">
+                    {model.preview ? (
+                      <img
+                        src={model.preview}
+                        alt={model.name}
+                        className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.05]"
+                      />
+                    ) : (
+                      <div className="text-4xl opacity-60">
+                        {fallbackIcon}
+                      </div>
                     )}
                   </div>
-                </div>
 
-                {/* Model Info */}
-                <div className="p-3 space-y-2">
-                  {model.isNew && (
-                    <span className="inline-block bg-emerald-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded">
-                      New
-                    </span>
-                  )}
-                  <h3 className="text-xs font-medium text-slate-200 line-clamp-2 leading-snug">
-                    {model.name}
-                  </h3>
-                  
-                  {/* Color Swatches */}
-                  {model.colors && model.colors.length > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      {model.colors.map((color, idx) => (
-                        <div
-                          key={idx}
-                          className="w-4 h-4 rounded-full border border-slate-700"
-                          style={{ backgroundColor: color }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </button>
-            ))}
+                  {/* Model Info */}
+                  <div className="p-3 space-y-2">
+                    {model.isNew && (
+                      <span className="inline-block bg-emerald-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                        New
+                      </span>
+                    )}
+                    <h3 className="text-xs font-medium text-slate-200 line-clamp-2 leading-snug">
+                      {model.name}
+                    </h3>
+                    
+                    {/* Color Swatches */}
+                    {model.colors && model.colors.length > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        {model.colors.map((color, idx) => (
+                          <div
+                            key={idx}
+                            className="w-4 h-4 rounded-full border border-slate-700"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>

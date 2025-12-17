@@ -62,7 +62,9 @@ export const MODEL_FILES = {
 
       type: "obj",
 
-      icon: "☕"
+      icon: "☕",
+      // Optional preview image (add when available)
+      preview: `${BASE_MODEL_PATH}/Cups/teamugobj.png`
 
     },
 
@@ -78,7 +80,8 @@ export const MODEL_FILES = {
 
       type: "obj",
 
-      icon: "☕"
+      icon: "☕",
+      preview: `${BASE_MODEL_PATH}/Cups/coffee_cup.png`
 
     },
 
@@ -94,7 +97,8 @@ export const MODEL_FILES = {
 
       type: "obj",
 
-      icon: "☕"
+      icon: "☕",
+      preview: `${BASE_MODEL_PATH}/Cups/Plastic_Cup.jpg`
 
     },
 
@@ -170,7 +174,8 @@ export const MODEL_FILES = {
       description: "Pill bottle model",
       file: `${BASE_MODEL_PATH}/Bottles/Pill_bottle.obj`,
       type: "obj",
-      icon: "🍼"
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Bottles/Pill_bottle.png`
     },
     // {
     //   id: "bottle-1",
@@ -200,7 +205,8 @@ export const MODEL_FILES = {
 
       type: "obj",
 
-      icon: "📦"
+      icon: "📦",
+      preview: `${BASE_MODEL_PATH}/Boxes/Cardboard_box.jpg`
 
     },
     { 
@@ -208,9 +214,10 @@ export const MODEL_FILES = {
       id: "box-2", 
       displayName: "Pizza Box", 
       description: "Pizza box model",
-      file: `${BASE_MODEL_PATH}/Cups/Boxes/14037_Pizza_Box_v2_L1.obj`,
+      file: `${BASE_MODEL_PATH}/Boxes/14037_Pizza_Box_v2_L1.obj`,
       type: "obj",
-      icon: "📦"
+      icon: "📦",
+      preview: `${BASE_MODEL_PATH}/Boxes/14037_Pizza_Box_v2_L1.jpg`
     },
 
     // Add box models here when files are available

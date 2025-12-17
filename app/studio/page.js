@@ -198,7 +198,7 @@ function ModelErrorFallback({ error }) {
 }
 
 // Dynamic OBJ Model Loader Component with Component Selection
-function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName = null }) {
+function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName = null, onBoundsComputed }) {
   // useLoader handles URL encoding automatically, so we can use the path directly
   const obj = useLoader(OBJLoader, filePath);
   
@@ -281,19 +281,19 @@ function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName =
       }
     });
     
-    const size = box.getSize(new THREE.Vector3());
-    const maxSize = Math.max(size.x, size.y, size.z);
-    
-    // Scale down if model is too large (e.g., paper_cup.obj might be in a different unit system)
-    if (maxSize > 200) {
-      const scaleFactor = 200 / maxSize;
-      cloned.scale.multiplyScalar(scaleFactor);
+      const size = box.getSize(new THREE.Vector3());
+      const maxSize = Math.max(size.x, size.y, size.z);
+      
+      // Scale down if model is too large (e.g., paper_cup.obj might be in a different unit system)
+      if (maxSize > 200) {
+        const scaleFactor = 200 / maxSize;
+        cloned.scale.multiplyScalar(scaleFactor);
       // Recalculate visual center after scaling
       const newVisualCenter = calculateVisualCenter(cloned);
       cloned.position.x = -newVisualCenter.x;
       cloned.position.y = -newVisualCenter.y;
       cloned.position.z = -newVisualCenter.z;
-    } else {
+      } else {
       // Center the model at origin using visual center
       cloned.position.x = -visualCenter.x;
       cloned.position.y = -visualCenter.y;
@@ -373,6 +373,17 @@ function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName =
   }, [obj, selectedGroupName]);
   
   useEffect(() => {
+    // Report model height (in view space) to parent for camera framing
+    if (onBoundsComputed) {
+      const box = new THREE.Box3().setFromObject(clonedObj);
+      const size = box.getSize(new THREE.Vector3());
+      if (isFinite(size.y) && size.y > 0) {
+        onBoundsComputed(size.y);
+      }
+    }
+  }, [clonedObj, onBoundsComputed]);
+
+  useEffect(() => {
     clonedObj.traverse((child) => {
       if (child.isMesh && child.visible) {
         child.castShadow = true;
@@ -397,7 +408,7 @@ function DynamicOBJModel({ filePath, logoTexture, baseColor, selectedGroupName =
 }
 
 // Dynamic GLB Model Loader Component
-function DynamicGLBModel({ filePath, logoTexture, baseColor }) {
+function DynamicGLBModel({ filePath, logoTexture, baseColor, onBoundsComputed }) {
   // Use useGLTF with caching enabled for better performance
   const { scene } = useGLTF(filePath, true);
   
@@ -415,6 +426,17 @@ function DynamicGLBModel({ filePath, logoTexture, baseColor }) {
     return cloned;
   }, [scene]);
   
+  useEffect(() => {
+    // Report model height (in view space) to parent for camera framing
+    if (onBoundsComputed) {
+      const box = new THREE.Box3().setFromObject(clonedScene);
+      const size = box.getSize(new THREE.Vector3());
+      if (isFinite(size.y) && size.y > 0) {
+        onBoundsComputed(size.y);
+      }
+    }
+  }, [clonedScene, onBoundsComputed]);
+
   useEffect(() => {
     clonedScene.traverse((child) => {
       if (child.isMesh) {
@@ -503,21 +525,22 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
     return null;
   }, [modelInfo, selectedComponent]);
   
-  // Calculate appropriate camera distance based on model
+  // Track current model height (after centering/scaling) to drive camera distance
+  const [modelHeight, setModelHeight] = useState(null);
+
+  // Calculate camera distance based on model height (fallback to default)
   const cameraDistance = useMemo(() => {
-    // Give some models a bit more distance so they don't start too zoomed in
-    if (modelInfo?.id === "box-2") {
-      // Pizza box – sit the camera further back
-      return 11;
+    if (!modelHeight || !isFinite(modelHeight) || modelHeight <= 0) {
+      return 5;
     }
 
-    // If paper_cup model, use a larger distance to avoid being inside
-    if (modelInfo?.file?.includes("paper_cup")) {
-      return 8;
-    }
+    // Simple framing rule: distance is proportional to model height
+    // Increase factor if you want the model smaller in view
+    const distance = modelHeight * 1.8;
 
-    return 5;
-  }, [modelInfo]);
+    // Clamp to reasonable range
+    return Math.min(Math.max(distance, 3), 20);
+  }, [modelHeight]);
 
   // Render model based on file type with Suspense for async loading
   const renderModel = () => {
@@ -546,13 +569,19 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
             logoTexture={logoTexture} 
             baseColor={baseColor}
             selectedGroupName={componentGroupName}
+            onBoundsComputed={setModelHeight}
           />
         </Suspense>
       );
     } else if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
       return (
         <Suspense fallback={<ModelLoadingFallback />}>
-          <DynamicGLBModel filePath={modelInfo.file} logoTexture={logoTexture} baseColor={baseColor} />
+          <DynamicGLBModel 
+            filePath={modelInfo.file} 
+            logoTexture={logoTexture} 
+            baseColor={baseColor}
+            onBoundsComputed={setModelHeight}
+          />
         </Suspense>
       );
     }
