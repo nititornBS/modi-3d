@@ -1,20 +1,45 @@
 @import "tailwindcss";
 
-/* Custom Scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
+/* Custom Scrollbar - Dark Mode */
+.dark .custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
+.dark .custom-scrollbar::-webkit-scrollbar-track {
   background: rgba(15, 23, 42, 0.5);
   border-radius: 4px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(56, 189, 248, 0.3);
   border-radius: 4px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.5);
+}
+
+/* Custom Scrollbar - Light Mode */
+.light .custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.5);
+  border-radius: 4px;
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.4);
+  border-radius: 4px;
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.6);
+}
+
+/* Base body styles */
+body {
+  background-color: #020617; /* slate-950 */
+  color: #e5e7eb; /* slate-200 */
 }

@@ -13,6 +13,7 @@ import UVEditor from "@/components/UVEditor";
 import UVEditorModal from "@/components/UVEditorModal";
 import ModelUVDataLoader from "@/components/ModelUVDataLoader";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
 import { MODEL_FILES, getModelById, getModelsByCategory } from "./modelMapping";
 
 const MODEL_OPTIONS = [
@@ -183,16 +184,6 @@ function ModelLoadingFallback() {
     <mesh>
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial color="#3b82f6" wireframe />
-    </mesh>
-  );
-}
-
-// Error boundary component for model loading
-function ModelErrorFallback({ error }) {
-  return (
-    <mesh>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#ef4444" />
     </mesh>
   );
 }
@@ -633,6 +624,7 @@ function StudioPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const { success, error: showError } = useToast();
   const urlModel = searchParams.get("model");
   const urlVariation = searchParams.get("variation");
 
@@ -733,7 +725,7 @@ function StudioPageContent() {
     }
 
     if (!sceneRef.current) {
-      alert("Model not ready. Please wait for the model to load.");
+      showError("Model not ready. Please wait for the model to load.");
       return;
     }
 
@@ -743,7 +735,7 @@ function StudioPageContent() {
         : getModelsByCategory(selectedModel)[0];
       
       if (!modelInfo) {
-        alert("No model selected.");
+        showError("No model selected.");
         return;
       }
 
@@ -788,7 +780,7 @@ function StudioPageContent() {
       }
 
       if (!modelObject) {
-        alert("Could not find model in scene. Please ensure the model is loaded.");
+        showError("Could not find model in scene. Please ensure the model is loaded.");
         return;
       }
 
@@ -907,7 +899,7 @@ function StudioPageContent() {
         }
         
         setTimeout(() => {
-          alert("Export completed! Model with texture has been downloaded.");
+          success("Export completed! Model with texture has been downloaded.");
         }, 200);
 
       } else if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
@@ -929,7 +921,7 @@ function StudioPageContent() {
               document.body.removeChild(link);
               URL.revokeObjectURL(url);
               setTimeout(() => {
-                alert("Export completed! Model with embedded texture has been downloaded.");
+                success("Export completed! Model with embedded texture has been downloaded.");
               }, 100);
             } else {
               // JSON GLTF (texture is embedded)
@@ -944,7 +936,7 @@ function StudioPageContent() {
               document.body.removeChild(link);
               URL.revokeObjectURL(url);
               setTimeout(() => {
-                alert("Export completed! Model with embedded texture has been downloaded.");
+                success("Export completed! Model with embedded texture has been downloaded.");
               }, 100);
             }
           },
@@ -972,15 +964,15 @@ function StudioPageContent() {
       // Success message for GLB/GLTF exports
       if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
         setTimeout(() => {
-          alert("Export completed! Model file has been downloaded.");
+          success("Export completed! Model file has been downloaded.");
         }, 500);
       }
 
     } catch (error) {
       console.error("Export error:", error);
-      alert("Error exporting model: " + error.message);
+      showError("Error exporting model: " + error.message);
     }
-  }, [selectedModel, selectedVariation, logoTexture, baseColor, isAuthenticated, router]);
+  }, [selectedModel, selectedVariation, logoTexture, baseColor, isAuthenticated, router, success, showError]);
 
   const currentVariations = MODEL_VARIATIONS[selectedModel] || [];
 

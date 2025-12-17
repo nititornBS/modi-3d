@@ -4,10 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
+  const { success, error: showError } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,14 +35,21 @@ export default function LoginPage() {
           method: "password",
         });
         
+        // Show success notification
+        success("Login successful! Welcome back.");
+        
         // Redirect to the page they came from or home
         const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
         router.push(returnUrl);
       } else {
-        setError("Please enter both username and password");
+        const errorMsg = "Please enter both username and password";
+        setError(errorMsg);
+        showError(errorMsg);
       }
     } catch (err) {
-      setError("Login failed. Please try again.");
+      const errorMsg = "Login failed. Please try again.";
+      setError(errorMsg);
+      showError(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -116,12 +125,17 @@ export default function LoginPage() {
       // Login the user with the data from Google
       login(data.user);
 
+      // Show success notification
+      success("Login successful! Welcome back.");
+
       // Redirect to the page they came from or home
       const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
       router.push(returnUrl);
     } catch (err) {
       console.error("Google login error:", err);
-      setError(err.message || "Google login failed. Please try again.");
+      const errorMsg = err.message || "Google login failed. Please try again.";
+      setError(errorMsg);
+      showError(errorMsg);
     } finally {
       setIsLoading(false);
     }
