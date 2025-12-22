@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { apiClient } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const { success, error: showError } = useToast();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,31 +24,36 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Simulate login - replace with actual authentication API call
-      if (username && password) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        
-        // In a real app, you would validate credentials with your backend
-        // For now, we'll accept any username/password combination
-        login({
-          username: username,
-          email: `${username}@example.com`,
-          method: "password",
-        });
-        
-        // Show success notification
-        success("Login successful! Welcome back.");
-        
-        // Redirect to the page they came from or home
-        const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
-        router.push(returnUrl);
-      } else {
-        const errorMsg = "Please enter both username and password";
+      if (!email || !password) {
+        const errorMsg = "Please enter both email and password";
         setError(errorMsg);
         showError(errorMsg);
+        setIsLoading(false);
+        return;
       }
+
+      const response = await apiClient.login(email, password);
+
+      // Store user data and token
+      login(
+        {
+          id: response.user.id,
+          username: response.user.username,
+          email: response.user.email,
+          method: "password",
+        },
+        response.token
+      );
+
+      // Show success notification
+      success("Login successful! Welcome back.");
+
+      // Redirect to the page they came from or home
+      const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
+      router.push(returnUrl);
     } catch (err) {
-      const errorMsg = "Login failed. Please try again.";
+      console.error("Login error:", err);
+      const errorMsg = err.message || "Login failed. Please try again.";
       setError(errorMsg);
       showError(errorMsg);
     } finally {
@@ -107,23 +113,19 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Send the credential to our API to verify and get user info
-      const apiResponse = await fetch("/api/auth/google", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      // Send the idToken to backend API
+      const data = await apiClient.googleLogin(response.credential);
+
+      // Store user data and token
+      login(
+        {
+          id: data.user.id,
+          username: data.user.username,
+          email: data.user.email,
+          method: "google",
         },
-        body: JSON.stringify({ credential: response.credential }),
-      });
-
-      const data = await apiResponse.json();
-
-      if (!apiResponse.ok || !data.success) {
-        throw new Error(data.error || "Google login failed");
-      }
-
-      // Login the user with the data from Google
-      login(data.user);
+        data.token
+      );
 
       // Show success notification
       success("Login successful! Welcome back.");
@@ -167,16 +169,16 @@ export default function LoginPage() {
           {/* Login form */}
           <form onSubmit={handleSubmit} className="space-y-4 mb-6">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-2">
-                Username
+              <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+                Email
               </label>
               <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
-                placeholder="Enter your username"
+                placeholder="Enter your email"
                 disabled={isLoading}
                 required
                 autoFocus
@@ -233,7 +235,7 @@ export default function LoginPage() {
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-slate-400">
             Don't have an account?{" "}
-            <Link href="/signup" className="text-sky-400 hover:text-sky-300 transition-colors">
+            <Link href="/register" className="text-sky-400 hover:text-sky-300 transition-colors">
               Sign up
             </Link>
           </p>

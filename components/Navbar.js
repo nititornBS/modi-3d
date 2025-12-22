@@ -7,11 +7,11 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import UserInfoDisplay from "./UserInfoDisplay";
 
-export default function Navbar({ 
+export default function Navbar({
   subtitle = "Fast product mockups in your browser",
   backLink = null,
   backText = null,
-  rightAction = null 
+  rightAction = null
 }) {
   const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
@@ -48,6 +48,17 @@ export default function Navbar({
     return method || "Unknown";
   };
 
+  const getDisplayUsername = () => {
+    if (user?.username && user.username.trim().length > 0) {
+      return user.username;
+    }
+    if (user?.email) {
+      const localPart = user.email.split("@")[0];
+      return localPart || null;
+    }
+    return null;
+  };
+
   const getInitials = () => {
     if (user?.name) {
       const names = user.name.split(" ");
@@ -56,7 +67,7 @@ export default function Navbar({
       }
       return names[0][0].toUpperCase();
     }
-    if (user?.username) {
+    if (user?.username && user.username.length > 0) {
       return user.username.charAt(0).toUpperCase();
     }
     if (user?.email) {
@@ -81,7 +92,7 @@ export default function Navbar({
             )}
           </div>
         </Link>
-        
+
         <div className="flex items-center gap-3">
           {backLink && (
             <Link
@@ -99,9 +110,9 @@ export default function Navbar({
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-sm font-bold text-slate-950">
                   {user?.picture ? (
-                    <img 
-                      src={user.picture} 
-                      alt={user.name || user.username} 
+                    <img
+                      src={user.picture}
+                      alt={user.name || user.username}
                       className="w-full h-full rounded-full object-cover"
                     />
                   ) : (
@@ -109,7 +120,7 @@ export default function Navbar({
                   )}
                 </div>
                 <span className="hidden sm:inline text-xs text-slate-300 font-medium">
-                  {user?.name || user?.username || "User"}
+                  {user?.name || getDisplayUsername() || "User"}
                 </span>
                 <svg
                   className={`w-4 h-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
@@ -129,9 +140,9 @@ export default function Navbar({
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-lg font-bold text-slate-950 flex-shrink-0">
                         {user?.picture ? (
-                          <img 
-                            src={user.picture} 
-                            alt={user.name || user.username} 
+                          <img
+                            src={user.picture}
+                            alt={user.name || user.username}
                             className="w-full h-full rounded-full object-cover"
                           />
                         ) : (
@@ -140,11 +151,13 @@ export default function Navbar({
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-slate-100 truncate">
-                          {user?.name || "No name"}
+                          {user?.name || getDisplayUsername() || "No name"}
                         </div>
-                        <div className="text-xs text-slate-400 truncate">
-                          @{user?.username || "username"}
-                        </div>
+                        {getDisplayUsername() && (
+                          <div className="text-xs text-slate-400 truncate">
+                            {getDisplayUsername()}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-400">

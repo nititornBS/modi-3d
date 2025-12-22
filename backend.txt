@@ -1,0 +1,165 @@
+Overview
+Stack: Node.js, Express, PostgreSQL (pg), JWT auth, bcrypt for passwords, Google OAuth via google-auth-library.
+Base URL: http://localhost:4000
+Main routes:
+Public: GET /
+Auth routes (prefix): /api/auth
+Protected example: GET /api/protected (JWT required)
+Database Schema (PostgreSQL)
+users
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+email VARCHAR(255) UNIQUE NOT NULL
+username VARCHAR(50) UNIQUE
+full_name VARCHAR(100)
+avatar_url TEXT
+email_verified BOOLEAN DEFAULT FALSE
+is_active BOOLEAN DEFAULT TRUE
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+Indexes on email and username.
+auth_providers
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+provider_type VARCHAR(20) NOT NULL ('local', 'google', etc.)
+provider_user_id VARCHAR(255) (e.g. Google sub ID)
+password_hash TEXT (for local only)
+created_at, updated_at timestamps
+Unique constraints: (provider_type, provider_user_id) and (user_id, provider_type)
+Index on (provider_type, provider_user_id) and user_id.
+refresh_tokens
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+token_hash TEXT NOT NULL
+expires_at TIMESTAMP NOT NULL
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+revoked BOOLEAN DEFAULT FALSE
+Index on user_id.
+(Currently defined but not wired into routes yet.)
+password_reset_tokens
+id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+token_hash TEXT NOT NULL
+expires_at TIMESTAMP NOT NULL
+used BOOLEAN DEFAULT FALSE
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+(Also defined but not yet used in routes.)
+Auth & Session Model
+JWT
+Signed with JWT_SECRET (from .env, e.g. JWT_SECRET=super_secret-key).
+Included in responses from login/register/Google login.
+Frontend must send JWT in Authorization: Bearer <token> header for protected endpoints.
+Payload includes: userId, username, email.
+Local (email/password) auth
+Register: POST /api/auth/register
+Request body: { "username", "email", "password" }.
+Flow:
+Check if username or email already exist in users.
+Hash password with bcrypt.
+Insert into users (email, username).
+Insert into auth_providers with provider_type='local', password_hash=<hash>.
+Return { message, token, user: { id, username, email } }.
+Login: POST /api/auth/login
+Request body: { "email", "password" }.
+Flow:
+Find user by email in users.
+Find auth_providers row for that user_id with provider_type='local'.
+Compare password to password_hash via bcrypt.
+On success, return { message, token, user }.
+If no local provider exists, respond that account must use Google login.
+Google OAuth login
+Endpoint: POST /api/auth/google
+Request body: { "idToken": "<Google ID token>" } from client-side Google login.
+Flow:
+Verify Google ID token with Google API (GOOGLE_CLIENT_ID from .env).
+Extract googleId (sub), email, name, picture.
+Transaction:
+Try to find user via auth_providers where provider_type='google' and provider_user_id=googleId.
+If not found, try to find users row by email:
+If found → link new auth_providers row for Google.
+If not found → create new users row (generate unique username from name/email, set full_name, avatar_url, email_verified=true), then create auth_providers row for Google.
+Return { message, token, user: { id, username, email } }.
+Protected Endpoints
+Middleware: authenticateToken
+Reads Authorization header, extracts Bearer token.
+Verifies token with JWT_SECRET.
+On success, sets req.user to decoded payload and calls next().
+On failure, returns 401 (no token) or 403 (invalid/expired).
+Example protected route: GET /api/protected
+Requires Authorization: Bearer <JWT>.
+Returns { message: "This is a protected route", user: <decoded JWT> }.
+Use this from the frontend to verify auth state and token handling.
+Current user route: GET /api/auth/me
+Also expects Authorization: Bearer <JWT>.
+Decodes token, fetches user by id from users.
+Returns { user: { id, username, email, created_at } }.
+Environment / Config (for frontend awareness)
+Backend expects:
+DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD for PostgreSQL.
+JWT_SECRET for signing tokens.
+GOOGLE_CLIENT_ID for verifying Google ID tokens.
+PORT (defaults to 3000).
+How frontend should generally interact
+Register: POST /api/auth/register → save returned JWT in secure storage (e.g. httpOnly cookie or memory + refresh strategy).
+Login: POST /api/auth/login → same as register.
+Google login:
+Frontend obtains Google ID token using Google client SDK.
+Sends token to POST /api/auth/google.
+Uses returned JWT for subsequent requests.
+Authenticated requests:
+Include header Authorization: Bearer <JWT> on calls to /api/auth/me, /api/protected, and any future protected API routes.
+User model (frontend view): treat user as { id: string (UUID), username: string | null, email: string, full_name?: string, avatar_url?: string }.
+
+Database:
+-- Users table (main user information)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(50) UNIQUE,
+    full_name VARCHAR(100),
+    avatar_url TEXT,
+    email_verified BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Auth providers table (handles multiple login methods)
+CREATE TABLE auth_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider_type VARCHAR(20) NOT NULL, -- 'local', 'google', 'facebook', etc.
+    provider_user_id VARCHAR(255), -- Google ID, Facebook ID, etc.
+    password_hash TEXT, -- Only for 'local' provider
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(provider_type, provider_user_id),
+    UNIQUE(user_id, provider_type)
+);
+
+-- Refresh tokens table (for JWT token management)
+CREATE TABLE refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    revoked BOOLEAN DEFAULT FALSE
+);
+
+-- Password reset tokens (optional but recommended)
+CREATE TABLE password_reset_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_auth_providers_user_id ON auth_providers(user_id);
+CREATE INDEX idx_auth_providers_provider ON auth_providers(provider_type, provider_user_id);
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
