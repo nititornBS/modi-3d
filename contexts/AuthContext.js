@@ -12,21 +12,49 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Load user and token from localStorage on mount
+  // Load user and token from localStorage on mount and validate token
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    const storedToken = localStorage.getItem("token");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem("user");
+    const initializeAuth = async () => {
+      const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem("token");
+      
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (e) {
+          localStorage.removeItem("user");
+        }
       }
-    }
-    if (storedToken) {
-      setToken(storedToken);
-    }
-    setIsLoading(false);
+      
+      if (storedToken) {
+        // Check if token is valid before setting it
+        try {
+          const response = await apiClient.checkToken(storedToken);
+          
+          if (response.valid && !response.expired) {
+            setToken(storedToken);
+          } else {
+            // Token is invalid or expired, clear everything
+            console.log("Token is invalid or expired, logging out...");
+            setUser(null);
+            setToken(null);
+            localStorage.removeItem("user");
+            localStorage.removeItem("token");
+          }
+        } catch (error) {
+          console.error("Token validation error:", error);
+          // Token check failed, clear everything to be safe
+          setUser(null);
+          setToken(null);
+          localStorage.removeItem("user");
+          localStorage.removeItem("token");
+        }
+      }
+      
+      setIsLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const login = (userData, authToken = null) => {

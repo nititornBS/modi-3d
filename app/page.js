@@ -1,80 +1,122 @@
 import Link from "next/link";
-import CupViewer from "@/components/CupViewer";
 import Navbar from "@/components/Navbar";
 
 export default function LandingPage() {
+  const tools = [
+    {
+      id: "3d-mockup",
+      title: "3D Mockup",
+      description: "Create stunning 3D product mockups with your designs on shirts, cups, bottles, and boxes.",
+      href: "/models",
+      icon: "🎨",
+      gradient: "from-sky-500 via-cyan-400 to-emerald-400",
+      features: ["3D viewer", "Multiple models", "Real-time preview"],
+    },
+    {
+      id: "2d-mockup",
+      title: "2D Mockup",
+      description: "Generate professional 2D product mockups and presentations for your designs.",
+      href: "/mockup-2d",
+      icon: "📐",
+      gradient: "from-purple-500 via-pink-400 to-rose-400",
+      features: ["Quick generation", "Multiple templates", "Export ready"],
+    },
+    {
+      id: "remove-background",
+      title: "Remove Background",
+      description: "Instantly remove backgrounds from your images with AI-powered precision.",
+      href: "/remove-background",
+      icon: "✨",
+      gradient: "from-emerald-500 via-teal-400 to-cyan-400",
+      features: ["AI powered", "Instant processing", "High quality"],
+    },
+  ];
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle="Fast product mockups in your browser" />
+      <Navbar subtitle="Creative tools for designers" />
 
       <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20 grid gap-8 sm:gap-12 lg:gap-14 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] items-center">
-          <div className="space-y-6 sm:space-y-8 order-2 lg:order-1">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight leading-tight">
-              Turn flat artwork into{" "}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
+          {/* Header */}
+          <div className="text-center mb-12 sm:mb-16 space-y-4 sm:space-y-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-tight">
+              Choose Your{" "}
               <span className="bg-gradient-to-r from-sky-400 via-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-                3D product mockups
+                Creative Tool
               </span>
-              .
             </h1>
-            <p className="text-sm sm:text-base lg:text-lg text-slate-300 max-w-2xl">
-              Upload your design and preview it on shirts, cups, bottles, and
-              boxes directly in the browser. Perfect for merch, e‑commerce
-              listings, and client previews.
+            <p className="text-base sm:text-lg lg:text-xl text-slate-300 max-w-3xl mx-auto">
+              Powerful design tools to bring your creative ideas to life. All running directly in your browser.
             </p>
-
-            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-5">
-              <Link
-                href="/models"
-                className="inline-flex items-center justify-center rounded-full bg-sky-500 px-6 sm:px-7 py-2.5 sm:py-3 text-sm sm:text-base font-semibold text-slate-950 shadow-lg shadow-sky-500/40 hover:bg-sky-400 transition w-full sm:w-auto"
-              >
-                Start 3D mockup tool
-              </Link>
-              <p className="text-xs sm:text-sm text-slate-400 text-center sm:text-left">
-                No install required. Runs in your browser.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2 sm:gap-3 text-[10px] sm:text-xs text-slate-400">
-              <span className="rounded-full border border-slate-700/80 px-2.5 sm:px-3 py-1 bg-slate-900/60">
-                3D viewer powered by three.js
-              </span>
-              <span className="rounded-full border border-slate-700/80 px-2.5 sm:px-3 py-1 bg-slate-900/60">
-                Supports shirts, cups, bottles &amp; boxes
-              </span>
-              <span className="rounded-full border border-slate-700/80 px-2.5 sm:px-3 py-1 bg-slate-900/60">
-                Drag‑to‑position artwork
-              </span>
-            </div>
           </div>
 
-          <div className="relative order-1 lg:order-2">
-            <div className="absolute inset-0 -translate-x-5 sm:-translate-x-10 -translate-y-3 sm:-translate-y-6 blur-3xl opacity-40 pointer-events-none bg-gradient-to-br from-sky-500 via-purple-500 to-emerald-400" />
-            <div className="relative rounded-xl sm:rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-4 sm:p-6 shadow-2xl shadow-slate-900/80">
-              <div className="mb-3 sm:mb-4 flex items-center justify-between text-[10px] sm:text-xs lg:text-sm text-slate-400">
-                <span className="font-medium text-slate-200 text-xs sm:text-sm">
-                  Live mockup preview
-                </span>
-                <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] sm:text-xs">
-                  Demo
-                </span>
-              </div>
-              <CupViewer />
-              <div className="mt-3 sm:mt-4 grid grid-cols-4 gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] lg:text-xs text-slate-300">
-                <span className="rounded-lg border border-slate-900 bg-slate-950 px-1.5 sm:px-2 py-1 text-center text-slate-500 truncate">
-                  Shirt
-                </span>
-                <span className="rounded-lg border border-sky-500/50 bg-sky-500/10 px-1.5 sm:px-2 py-1 text-center text-sky-300 truncate">
-                  Cup
-                </span>
-                <span className="rounded-lg border border-slate-900 bg-slate-950 px-1.5 sm:px-2 py-1 text-center text-slate-500 truncate">
-                  Bottle
-                </span>
-                <span className="rounded-lg border border-slate-900 bg-slate-950 px-1.5 sm:px-2 py-1 text-center text-slate-500 truncate">
-                  Box
-                </span>
-              </div>
-            </div>
+          {/* Tools Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 max-w-6xl mx-auto">
+            {tools.map((tool) => (
+              <Link
+                key={tool.id}
+                href={tool.href}
+                className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 hover:border-slate-700 transition-all duration-300 hover:shadow-2xl hover:shadow-sky-500/20"
+              >
+                {/* Gradient Background on Hover */}
+                <div className={`absolute inset-0 bg-gradient-to-br ${tool.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
+                
+                <div className="relative space-y-4">
+                  {/* Icon */}
+                  <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${tool.gradient} flex items-center justify-center text-3xl shadow-lg shadow-sky-500/20 group-hover:scale-110 transition-transform duration-300`}>
+                    {tool.icon}
+                  </div>
+
+                  {/* Content */}
+                  <div className="space-y-2">
+                    <h3 className="text-xl sm:text-2xl font-semibold text-slate-100 group-hover:text-white transition-colors">
+                      {tool.title}
+                    </h3>
+                    <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
+                      {tool.description}
+                    </p>
+                  </div>
+
+                  {/* Features */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {tool.features.map((feature, index) => (
+                      <span
+                        key={index}
+                        className="text-xs px-3 py-1 rounded-full border border-slate-700 bg-slate-900/50 text-slate-400"
+                      >
+                        {feature}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Arrow */}
+                  <div className="flex items-center text-sky-400 group-hover:text-sky-300 transition-colors pt-2">
+                    <span className="text-sm font-medium">Get Started</span>
+                    <svg
+                      className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 7l5 5m0 0l-5 5m5-5H6"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Info Section */}
+          <div className="mt-16 sm:mt-20 text-center">
+            <p className="text-sm text-slate-400">
+              No installation required • All tools run in your browser • Fast and secure
+            </p>
           </div>
         </div>
       </section>
@@ -87,7 +129,7 @@ export default function LandingPage() {
               Platform <span className="bg-gradient-to-r from-sky-400 to-cyan-300 bg-clip-text text-transparent">Statistics</span>
             </h2>
             <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto px-4">
-              Discover the scale of our 3D mockup platform and join thousands of creators
+              Discover the scale of our creative platform and join thousands of creators
             </p>
           </div>
 
@@ -103,7 +145,7 @@ export default function LandingPage() {
                   Categories
                 </div>
                 <p className="text-xs sm:text-sm text-slate-400">
-                  Cups, Shirts, Bottles, and Boxes
+                  Creative tools for designers
                 </p>
               </div>
             </div>
@@ -116,10 +158,10 @@ export default function LandingPage() {
                   12+
                 </div>
                 <div className="text-lg sm:text-xl font-semibold text-slate-200 mb-2">
-                  Models
+                  Tools
                 </div>
                 <p className="text-xs sm:text-sm text-slate-400">
-                  Multiple variations per category
+                  3D, 2D mockups & background removal
                 </p>
               </div>
             </div>
