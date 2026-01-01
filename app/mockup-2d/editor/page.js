@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
@@ -72,6 +72,30 @@ function applyPerspectiveTransform(ctx, srcX, srcY, srcWidth, srcHeight, dstPoin
   ctx.translate(-srcCenterX, -srcCenterY);
 }
 
+// Helper function to apply subtle effects for cup category to make image look more natural
+// Uses canvas transformations for better performance
+function applyCupWarp(ctx, image, x, y, width, height) {
+  // Save context state
+  ctx.save();
+  
+  // Apply subtle horizontal scaling to simulate cup curvature
+  // Slightly compress the middle to create a wrap-around effect
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  
+  // Move to center, apply slight horizontal scale, then draw
+  ctx.translate(centerX, centerY);
+  // Subtle horizontal compression (0.96 = 4% compression in middle)
+  ctx.scale(0.96, 1.0);
+  ctx.translate(-centerX, -centerY);
+  
+  // Draw the image
+  ctx.drawImage(image, x, y, width, height);
+  
+  // Restore context
+  ctx.restore();
+}
+
 // Helper function to check if a point is inside a polygon (using ray casting algorithm)
 function isPointInPolygon(point, polygon) {
   let inside = false;
@@ -101,7 +125,7 @@ function getConstrainedBounds(points, imageWidth, imageHeight) {
   };
 }
 
-export default function Mockup2DEditorPage() {
+function Mockup2DEditorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const templateId = searchParams.get("template");
@@ -223,14 +247,28 @@ export default function Mockup2DEditorPage() {
         }
         
         ctx.save();
-        // Only apply drop shadow if category is not "banner"
-        if (currentTemplate.category !== "banner") {
+        // Apply reduced opacity to all categories for more natural look
+        ctx.globalAlpha = 0.95;
+        
+        // Special handling for cup category
+        if (currentTemplate.category === "cup") {
+          // Use softer shadow for cups
+          ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
+          ctx.shadowBlur = 10;
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+          // Use multiply blend mode for better integration with cup surface
+          ctx.globalCompositeOperation = 'multiply';
+        } else if (currentTemplate.category !== "banner") {
+          // Standard drop shadow for other categories
           ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
           ctx.shadowBlur = 15;
           ctx.shadowOffsetX = 3;
           ctx.shadowOffsetY = 3;
+          ctx.globalCompositeOperation = 'source-over';
+        } else {
+          ctx.globalCompositeOperation = 'source-over';
         }
-        ctx.globalCompositeOperation = 'source-over';
         
         // Check if 4-point perspective is set
         if (designData.perspectivePoints && designData.perspectivePoints.length === 4) {
@@ -243,7 +281,12 @@ export default function Mockup2DEditorPage() {
             finalHeight,
             designData.perspectivePoints
           );
-          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+          // Apply cup warp if cup category
+          if (currentTemplate.category === "cup") {
+            applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
+          } else {
+            ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+          }
         } else {
           // Use standard transformation
           const centerX = designX + finalWidth / 2;
@@ -261,7 +304,12 @@ export default function Mockup2DEditorPage() {
           // Move back to draw at correct position
           ctx.translate(-centerX, -centerY);
           
-          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+          // Apply cup warp if cup category
+          if (currentTemplate.category === "cup") {
+            applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
+          } else {
+            ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+          }
         }
         ctx.restore();
         
@@ -748,12 +796,27 @@ export default function Mockup2DEditorPage() {
       }
       
       ctx.save();
-      // Only apply drop shadow if category is not "banner"
-      if (currentTemplate.category !== "banner") {
+      // Apply reduced opacity to all categories for more natural look
+      ctx.globalAlpha = 0.95;
+      
+      // Special handling for cup category
+      if (currentTemplate.category === "cup") {
+        // Use softer shadow for cups
+        ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        // Use multiply blend mode for better integration with cup surface
+        ctx.globalCompositeOperation = 'multiply';
+      } else if (currentTemplate.category !== "banner") {
+        // Standard drop shadow for other categories
         ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
         ctx.shadowBlur = 20;
         ctx.shadowOffsetX = 4;
         ctx.shadowOffsetY = 4;
+        ctx.globalCompositeOperation = 'source-over';
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
       }
       
       // Check if 4-point perspective is set
@@ -772,7 +835,12 @@ export default function Mockup2DEditorPage() {
           finalHeight,
           scaledPoints
         );
-        ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+        // Apply cup warp if cup category
+        if (currentTemplate.category === "cup") {
+          applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
+        } else {
+          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+        }
       } else {
         // Use standard transformation
         const centerX = designX + finalWidth / 2;
@@ -790,7 +858,12 @@ export default function Mockup2DEditorPage() {
         // Move back to draw at correct position
         ctx.translate(-centerX, -centerY);
         
-        ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+        // Apply cup warp if cup category
+        if (currentTemplate.category === "cup") {
+          applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
+        } else {
+          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
+        }
       }
       ctx.restore();
     });
@@ -1278,6 +1351,21 @@ export default function Mockup2DEditorPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function Mockup2DEditorPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+        <Navbar subtitle="2D Mockup Editor" backLink="/mockup-2d" backText="← Back to Templates" />
+        <section className="flex-1 py-8 sm:py-12 flex items-center justify-center">
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+        </section>
+      </main>
+    }>
+      <Mockup2DEditorContent />
+    </Suspense>
   );
 }
 
