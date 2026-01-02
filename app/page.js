@@ -1,8 +1,14 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import Navbar from "@/components/Navbar";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const tools = [
     {
       id: "3d-mockup",
@@ -33,6 +39,17 @@ export default function LandingPage() {
     },
   ];
 
+  const handleToolClick = (e, tool) => {
+    // Check if user is authenticated
+    if (!isAuthenticated()) {
+      e.preventDefault();
+      // Redirect to login with returnUrl parameter
+      const returnUrl = encodeURIComponent(tool.href);
+      router.push(`/login?returnUrl=${returnUrl}`);
+    }
+    // If authenticated, let the Link component handle navigation normally
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       <Navbar subtitle="" />
@@ -58,6 +75,7 @@ export default function LandingPage() {
               <Link
                 key={tool.id}
                 href={tool.href}
+                onClick={(e) => handleToolClick(e, tool)}
                 className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 hover:border-slate-700 transition-all duration-300 hover:shadow-2xl hover:shadow-sky-500/20 animate-[fadeInUp_0.6s_ease-out_both]"
                 style={{ animationDelay: `${0.4 + index * 0.15}s` }}
               >

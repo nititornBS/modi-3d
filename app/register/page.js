@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +17,18 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [returnUrl, setReturnUrl] = useState("");
+
+  // Get returnUrl from query params
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get("returnUrl");
+      if (url) {
+        setReturnUrl(url);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -63,8 +75,9 @@ export default function RegisterPage() {
       // Show success notification
       success("Registration successful! Welcome to M3D.");
 
-      // Redirect to models page
-      router.push("/models");
+      // Redirect to the page they came from or models page
+      const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
+      router.push(returnUrl);
     } catch (err) {
       console.error("Registration error:", err);
       const errorMsg = err.message || "Registration failed. Please try again.";
@@ -179,7 +192,10 @@ export default function RegisterPage() {
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-slate-400 animate-[fadeIn_0.5s_ease-out_0.9s_both]">
             Already have an account?{" "}
-            <Link href="/login" className="text-sky-400 hover:text-sky-300 transition-colors duration-300 hover:underline">
+            <Link 
+              href={returnUrl ? `/login?returnUrl=${encodeURIComponent(returnUrl)}` : "/login"}
+              className="text-sky-400 hover:text-sky-300 transition-colors duration-300 hover:underline"
+            >
               Sign in
             </Link>
           </p>

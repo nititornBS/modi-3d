@@ -15,8 +15,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [returnUrl, setReturnUrl] = useState("");
   const googleButtonRef = useRef(null);
   const googleLoaded = useRef(false);
+
+  // Get returnUrl from query params
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get("returnUrl");
+      if (url) {
+        setReturnUrl(url);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -235,7 +247,10 @@ export default function LoginPage() {
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-slate-400 animate-[fadeIn_0.5s_ease-out_0.8s_both]">
             Don't have an account?{" "}
-            <Link href="/register" className="text-sky-400 hover:text-sky-300 transition-colors duration-300 hover:underline">
+            <Link 
+              href={returnUrl ? `/register?returnUrl=${encodeURIComponent(returnUrl)}` : "/register"}
+              className="text-sky-400 hover:text-sky-300 transition-colors duration-300 hover:underline"
+            >
               Sign up
             </Link>
           </p>
