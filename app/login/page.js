@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,8 +16,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [returnUrl, setReturnUrl] = useState("");
-  const googleButtonRef = useRef(null);
-  const googleLoaded = useRef(false);
 
   // Get returnUrl from query params
   useEffect(() => {
@@ -73,87 +71,6 @@ export default function LoginPage() {
     }
   };
 
-  // Load Google Identity Services
-  useEffect(() => {
-    if (typeof window !== "undefined" && !googleLoaded.current) {
-      const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-      
-      if (!clientId) {
-        console.error("Google Client ID is not configured");
-        setError("Google login is not configured. Please check your environment variables.");
-        return;
-      }
-
-      // Load Google Identity Services script
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        if (window.google && window.google.accounts) {
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: handleGoogleCallback,
-          });
-
-          // Render the button
-          if (googleButtonRef.current) {
-            window.google.accounts.id.renderButton(googleButtonRef.current, {
-              theme: "outline",
-              size: "large",
-              width: "100%",
-              text: "signin_with",
-              locale: "en",
-            });
-          }
-          googleLoaded.current = true;
-        }
-      };
-      script.onerror = () => {
-        setError("Failed to load Google Identity Services");
-      };
-      document.head.appendChild(script);
-
-      return () => {
-        // Cleanup if needed
-      };
-    }
-  }, []);
-
-  const handleGoogleCallback = async (response) => {
-    setError("");
-    setIsLoading(true);
-
-    try {
-      // Send the idToken to backend API
-      const data = await apiClient.googleLogin(response.credential);
-
-      // Store user data and token
-      login(
-        {
-          id: data.user.id,
-          username: data.user.username,
-          email: data.user.email,
-          method: "google",
-        },
-        data.token
-      );
-
-      // Show success notification
-      success("Login successful! Welcome back.");
-
-      // Redirect to the page they came from or home
-      const returnUrl = new URLSearchParams(window.location.search).get("returnUrl") || "/models";
-      router.push(returnUrl);
-    } catch (err) {
-      console.error("Google login error:", err);
-      const errorMsg = err.message || "Google login failed. Please try again.";
-      setError(errorMsg);
-      showError(errorMsg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center p-4">
@@ -221,28 +138,6 @@ export default function LoginPage() {
               {isLoading ? "Signing in..." : "Sign In"}
             </button>
           </form>
-
-          {/* Divider */}
-          <div className="relative my-6 animate-[fadeIn_0.5s_ease-out_0.6s_both]">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-slate-900 text-slate-400">Or continue with</span>
-            </div>
-          </div>
-
-          {/* Google login button */}
-          <div 
-            ref={googleButtonRef}
-            className="w-full flex justify-center animate-[fadeIn_0.5s_ease-out_0.7s_both]"
-            style={{ minHeight: "40px" }}
-          />
-          {isLoading && (
-            <div className="mt-2 text-center text-sm text-slate-400 animate-[fadeIn_0.4s_ease-out]">
-              Signing in with Google...
-            </div>
-          )}
 
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-slate-400 animate-[fadeIn_0.5s_ease-out_0.8s_both]">
