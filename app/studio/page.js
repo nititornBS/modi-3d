@@ -976,6 +976,16 @@ function StudioPageContent() {
 
   const currentVariations = MODEL_VARIATIONS[selectedModel] || [];
 
+  // Get current model info for display
+  const currentModelInfo = useMemo(() => {
+    if (selectedVariation) {
+      return getModelById(selectedVariation);
+    }
+    // Fallback to first model in category if no variation selected
+    const categoryModels = getModelsByCategory(selectedModel);
+    return categoryModels[0] || null;
+  }, [selectedModel, selectedVariation]);
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur sticky top-0 z-50">
@@ -985,11 +995,11 @@ function StudioPageContent() {
               M3D
             </span>
             <div>
-            <span className="font-medium text-slate-100">Mockup 3D Studio</span>
-              {selectedVariation && (
-                <span className="ml-2 text-xs text-slate-400">
-                  • {selectedVariation.replace("-", " ").replace(/\b\w/g, l => l.toUpperCase())}
-          </span>
+              <span className="font-medium text-slate-100">Mockup 3D Studio</span>
+              {currentModelInfo && (
+                <span className="ml-2 text-xs text-slate-400 hidden sm:inline">
+                  • {currentModelInfo.displayName || currentModelInfo.name}
+                </span>
               )}
             </div>
           </Link>

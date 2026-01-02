@@ -79,7 +79,7 @@ function ModelsPageContent() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       <Navbar 
-        subtitle="Select a model to customize"
+        subtitle="3D Mockup"
         backLink="/"
         backText="← Back to Home"
       />

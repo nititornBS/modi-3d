@@ -125,6 +125,61 @@ function getConstrainedBounds(points, imageWidth, imageHeight) {
   };
 }
 
+// Helper function to apply grayscale filter to an image
+function applyGrayscaleFilter(image, callback) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = image.width || image.naturalWidth;
+  canvas.height = image.height || image.naturalHeight;
+  
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // Convert to grayscale
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    data[i] = gray;     // R
+    data[i + 1] = gray; // G
+    data[i + 2] = gray; // B
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  
+  const filteredImg = new Image();
+  filteredImg.onload = () => callback(filteredImg);
+  filteredImg.src = canvas.toDataURL();
+}
+
+// Helper function to apply 2-tone (duotone) filter to an image
+function applyDuotoneFilter(image, color1 = [139, 92, 246], color2 = [236, 72, 153], callback) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = image.width || image.naturalWidth;
+  canvas.height = image.height || image.naturalHeight;
+  
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // Convert to grayscale first, then apply duotone
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    const normalizedGray = gray / 255; // 0 to 1
+    
+    // Blend between color1 (dark) and color2 (light) based on gray value
+    data[i] = color1[0] * (1 - normalizedGray) + color2[0] * normalizedGray;     // R
+    data[i + 1] = color1[1] * (1 - normalizedGray) + color2[1] * normalizedGray; // G
+    data[i + 2] = color1[2] * (1 - normalizedGray) + color2[2] * normalizedGray; // B
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  
+  const filteredImg = new Image();
+  filteredImg.onload = () => callback(filteredImg);
+  filteredImg.src = canvas.toDataURL();
+}
+
 function Mockup2DEditorContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -137,6 +192,7 @@ function Mockup2DEditorContent() {
   const canvasRef = useRef(null);
   const bannerImageRef = useRef(null);
   const userDesignsRef = useRef({}); // Map of designId -> image object
+  const originalImagesRef = useRef({}); // Map of designId -> original image object (for resetting filters)
   const containerRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingDesignId, setDraggingDesignId] = useState(null);
@@ -151,6 +207,19 @@ function Mockup2DEditorContent() {
   const [showMappingArea, setShowMappingArea] = useState(false); // Show mapping overlay
   const mappingAreaRef = useRef(null); // Ref for mapping area div
   const [isDraggingInMapping, setIsDraggingInMapping] = useState(false); // Track dragging in mapping area
+  const [showColorPalette, setShowColorPalette] = useState(false); // Show color palette for duotone
+  const [duotoneColor1, setDuotoneColor1] = useState([139, 92, 246]); // Purple (default)
+  const [duotoneColor2, setDuotoneColor2] = useState([236, 72, 153]); // Pink (default)
+  
+  // Popular colors for logo/mockup tinting
+  // Each color has a dark (shadow) and light (highlight) variant for duotone effect
+  const popularColors = [
+    { name: "Black", dark: [0, 0, 0], light: [100, 100, 100] },
+    { name: "White", dark: [200, 200, 200], light: [255, 255, 255] },
+    { name: "Gold", dark: [184, 134, 11], light: [255, 215, 0] },
+    { name: "Navy Blue", dark: [0, 20, 60], light: [30, 60, 120] },
+    { name: "Crimson Red", dark: [139, 0, 0], light: [220, 20, 60] },
+  ];
 
   const currentTemplate =
     (templateId && TEMPLATES[templateId]) || TEMPLATES["billboard-street"];
@@ -416,6 +485,8 @@ function Mockup2DEditorContent() {
           function addDesign() {
             // Store image reference BEFORE state update to ensure it's available when drawComposite runs
             userDesignsRef.current[designId] = img;
+            // Store original image for filter reset functionality
+            originalImagesRef.current[designId] = img;
             
             // Add to designs array - useEffect will trigger drawComposite when userDesigns changes
             setUserDesigns((prev) => [
@@ -463,6 +534,11 @@ function Mockup2DEditorContent() {
       drawComposite();
     }
   }, [drawComposite, userDesigns]);
+
+  // Close color palette when selected design changes
+  useEffect(() => {
+    setShowColorPalette(false);
+  }, [selectedDesignId]);
 
   // Handle window resize to recalculate preview scale
   useEffect(() => {
@@ -882,7 +958,7 @@ function Mockup2DEditorContent() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle="2D Mockup Editor" backLink="/mockup-2d" backText="← Back to Templates" />
+      <Navbar subtitle={currentTemplate?.name || "2D Mockup Editor"} backLink="/mockup-2d" backText="← Back to Templates" />
 
       <section className="flex-1 py-8 sm:py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
@@ -1047,6 +1123,7 @@ function Mockup2DEditorContent() {
                                 return filtered;
                               });
                               delete userDesignsRef.current[designData.id];
+                              delete originalImagesRef.current[designData.id];
                               setTimeout(() => drawComposite(), 100);
                             }}
                             className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-900/90 hover:bg-red-600/80 text-slate-300 hover:text-white transition-colors"
@@ -1115,6 +1192,171 @@ function Mockup2DEditorContent() {
                         <span>0°</span>
                         <span>180°</span>
                       </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-2">Image Effects</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => {
+                            const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
+                            if (!selectedDesign) return;
+                            
+                            // Always use the original image for filtering
+                            const originalImg = originalImagesRef.current[selectedDesignId];
+                            if (!originalImg) return;
+                            
+                            setIsProcessing(true);
+                            applyGrayscaleFilter(originalImg, (filteredImg) => {
+                              userDesignsRef.current[selectedDesignId] = filteredImg;
+                              setIsProcessing(false);
+                              drawComposite();
+                            });
+                          }}
+                          disabled={isProcessing}
+                          className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          Grayscale
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowColorPalette(!showColorPalette);
+                          }}
+                          disabled={isProcessing}
+                          className={`px-3 py-2 rounded-lg border text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                            showColorPalette
+                              ? 'border-purple-500 bg-purple-500/20 text-purple-300'
+                              : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                          </svg>
+                          Color Filter
+                        </button>
+                      </div>
+                      
+                      {/* Color Palette UI */}
+                      {showColorPalette && (
+                        <div className="mt-4 p-4 rounded-lg border border-slate-700 bg-slate-900/80 space-y-4">
+                          <div>
+                            <label className="block text-xs text-slate-400 mb-2">Quick Select Popular Colors</label>
+                            <div className="grid grid-cols-5 gap-2">
+                              {popularColors.map((colorOption, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => {
+                                    // Set dark and light colors for duotone effect
+                                    setDuotoneColor1(colorOption.dark);
+                                    setDuotoneColor2(colorOption.light);
+                                  }}
+                                  className="aspect-square rounded-lg border-2 border-slate-700 hover:border-purple-500 transition-colors relative group"
+                                  style={{
+                                    background: `linear-gradient(135deg, rgb(${colorOption.dark[0]}, ${colorOption.dark[1]}, ${colorOption.dark[2]}) 0%, rgb(${colorOption.light[0]}, ${colorOption.light[1]}, ${colorOption.light[2]}) 100%)`
+                                  }}
+                                  title={colorOption.name}
+                                >
+                                  <span className="absolute inset-0 flex items-center justify-center text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity font-medium drop-shadow-lg">
+                                    {colorOption.name}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-2">Dark Color (Shadows)</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={`#${duotoneColor1[0].toString(16).padStart(2, '0')}${duotoneColor1[1].toString(16).padStart(2, '0')}${duotoneColor1[2].toString(16).padStart(2, '0')}`}
+                                  onChange={(e) => {
+                                    const hex = e.target.value;
+                                    const r = parseInt(hex.slice(1, 3), 16);
+                                    const g = parseInt(hex.slice(3, 5), 16);
+                                    const b = parseInt(hex.slice(5, 7), 16);
+                                    setDuotoneColor1([r, g, b]);
+                                  }}
+                                  className="w-12 h-10 rounded border border-slate-700 cursor-pointer"
+                                />
+                                <div className="flex-1 text-xs text-slate-500">
+                                  RGB({duotoneColor1[0]}, {duotoneColor1[1]}, {duotoneColor1[2]})
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div>
+                              <label className="block text-xs text-slate-400 mb-2">Light Color (Highlights)</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={`#${duotoneColor2[0].toString(16).padStart(2, '0')}${duotoneColor2[1].toString(16).padStart(2, '0')}${duotoneColor2[2].toString(16).padStart(2, '0')}`}
+                                  onChange={(e) => {
+                                    const hex = e.target.value;
+                                    const r = parseInt(hex.slice(1, 3), 16);
+                                    const g = parseInt(hex.slice(3, 5), 16);
+                                    const b = parseInt(hex.slice(5, 7), 16);
+                                    setDuotoneColor2([r, g, b]);
+                                  }}
+                                  className="w-12 h-10 rounded border border-slate-700 cursor-pointer"
+                                />
+                                <div className="flex-1 text-xs text-slate-500">
+                                  RGB({duotoneColor2[0]}, {duotoneColor2[1]}, {duotoneColor2[2]})
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <button
+                            onClick={() => {
+                              const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
+                              if (!selectedDesign) return;
+                              
+                              const originalImg = originalImagesRef.current[selectedDesignId];
+                              if (!originalImg) return;
+                              
+                              setIsProcessing(true);
+                              applyDuotoneFilter(originalImg, duotoneColor1, duotoneColor2, (filteredImg) => {
+                                userDesignsRef.current[selectedDesignId] = filteredImg;
+                                setIsProcessing(false);
+                                drawComposite();
+                                setShowColorPalette(false);
+                              });
+                            }}
+                            disabled={isProcessing}
+                            className="w-full px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isProcessing ? 'Applying...' : 'Apply Color Filter'}
+                          </button>
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={() => {
+                          const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
+                          if (!selectedDesign) return;
+                          
+                          // Reset to original image
+                          const originalImg = originalImagesRef.current[selectedDesignId];
+                          if (originalImg) {
+                            userDesignsRef.current[selectedDesignId] = originalImg;
+                            drawComposite();
+                            setShowColorPalette(false);
+                          }
+                        }}
+                        className="w-full mt-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Reset to Original
+                      </button>
+                      <p className="text-xs text-slate-500 mt-2 text-center">
+                        Apply image effects to your design
+                      </p>
                     </div>
                     {(currentTemplate.category === "card" || currentTemplate.category === "banner") && (
                       <div>
