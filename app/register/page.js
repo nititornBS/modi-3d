@@ -18,6 +18,9 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [returnUrl, setReturnUrl] = useState("");
+  const [usernameAvailable, setUsernameAvailable] = useState(null); // null = not checked, true = available, false = taken/invalid
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameMessage, setUsernameMessage] = useState("");
 
   // Get returnUrl from query params
   useEffect(() => {
@@ -29,6 +32,40 @@ export default function RegisterPage() {
       }
     }
   }, []);
+
+  // Debounced username availability check
+  useEffect(() => {
+    // Reset state if username is too short
+    if (!username || username.trim().length < 3) {
+      setUsernameAvailable(null);
+      setUsernameMessage("");
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    // Debounce: wait 500ms after user stops typing
+    const timeoutId = setTimeout(async () => {
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername || trimmedUsername.length < 3) {
+        return;
+      }
+
+      setIsCheckingUsername(true);
+      try {
+        const data = await apiClient.checkUsername(trimmedUsername);
+        setUsernameAvailable(data.available);
+        setUsernameMessage(data.message || data.error || "");
+      } catch (error) {
+        console.error("Error checking username:", error);
+        setUsernameAvailable(false);
+        setUsernameMessage("Failed to check username availability");
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [username]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -51,6 +88,22 @@ export default function RegisterPage() {
 
     if (password.length < 6) {
       const errorMsg = "Password must be at least 6 characters long";
+      setError(errorMsg);
+      showError(errorMsg);
+      return;
+    }
+
+    // Check if username is available
+    if (usernameAvailable === false) {
+      const errorMsg = usernameMessage || "Username is not available";
+      setError(errorMsg);
+      showError(errorMsg);
+      return;
+    }
+
+    // If username is still being checked, wait a bit
+    if (isCheckingUsername) {
+      const errorMsg = "Please wait while we check username availability";
       setError(errorMsg);
       showError(errorMsg);
       return;
@@ -117,17 +170,96 @@ export default function RegisterPage() {
               <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-2">
                 Username
               </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all duration-300 hover:border-slate-600"
-                placeholder="Choose a username"
-                disabled={isLoading}
-                required
-                autoFocus
-              />
+              <div className="relative">
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className={`w-full px-4 py-3 rounded-lg border bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-300 hover:border-slate-600 ${
+                    usernameAvailable === true
+                      ? "border-emerald-500/50 focus:ring-emerald-500"
+                      : usernameAvailable === false
+                      ? "border-red-500/50 focus:ring-red-500"
+                      : "border-slate-700 focus:ring-sky-500"
+                  }`}
+                  placeholder="Choose a username"
+                  disabled={isLoading}
+                  required
+                  autoFocus
+                />
+                {isCheckingUsername && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="animate-spin h-5 w-5 text-slate-400"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                  </div>
+                )}
+                {!isCheckingUsername && usernameAvailable === true && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="h-5 w-5 text-emerald-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                )}
+                {!isCheckingUsername && usernameAvailable === false && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="h-5 w-5 text-red-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              {usernameMessage && (
+                <p
+                  className={`mt-1 text-xs ${
+                    usernameAvailable === true
+                      ? "text-emerald-400"
+                      : usernameAvailable === false
+                      ? "text-red-400"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {usernameMessage}
+                </p>
+              )}
             </div>
 
             <div className="animate-[fadeInUp_0.5s_ease-out_0.5s_both]">
