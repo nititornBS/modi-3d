@@ -22,6 +22,27 @@ export default function RegisterPage() {
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameMessage, setUsernameMessage] = useState("");
 
+  // Password validation functions
+  const passwordValidations = {
+    minLength: (pwd) => pwd.length >= 8,
+    hasCapital: (pwd) => /[A-Z]/.test(pwd),
+    hasNumber: (pwd) => /[0-9]/.test(pwd),
+    hasSpecial: (pwd) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+  };
+
+  // Check all password conditions
+  const getPasswordValidation = (pwd) => {
+    return {
+      minLength: passwordValidations.minLength(pwd),
+      hasCapital: passwordValidations.hasCapital(pwd),
+      hasNumber: passwordValidations.hasNumber(pwd),
+      hasSpecial: passwordValidations.hasSpecial(pwd),
+    };
+  };
+
+  const passwordValidation = getPasswordValidation(password);
+  const isPasswordValid = Object.values(passwordValidation).every(Boolean);
+
   // Get returnUrl from query params
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -86,8 +107,28 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      const errorMsg = "Password must be at least 6 characters long";
+    // Check password requirements
+    const validation = getPasswordValidation(password);
+    if (!validation.minLength) {
+      const errorMsg = "Password must be at least 8 characters long";
+      setError(errorMsg);
+      showError(errorMsg);
+      return;
+    }
+    if (!validation.hasCapital) {
+      const errorMsg = "Password must contain at least one capital letter";
+      setError(errorMsg);
+      showError(errorMsg);
+      return;
+    }
+    if (!validation.hasNumber) {
+      const errorMsg = "Password must contain at least one number";
+      setError(errorMsg);
+      showError(errorMsg);
+      return;
+    }
+    if (!validation.hasSpecial) {
+      const errorMsg = "Password must contain at least one special character";
       setError(errorMsg);
       showError(errorMsg);
       return;
@@ -287,29 +328,152 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all duration-300 hover:border-slate-600"
+                className={`w-full px-4 py-3 rounded-lg border bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-300 hover:border-slate-600 ${
+                  password && isPasswordValid
+                    ? "border-emerald-500/50 focus:ring-emerald-500"
+                    : password && !isPasswordValid
+                    ? "border-yellow-500/50 focus:ring-yellow-500"
+                    : "border-slate-700 focus:ring-sky-500"
+                }`}
                 placeholder="Create a password"
                 disabled={isLoading}
                 required
-                minLength={6}
+                minLength={8}
               />
+              
+              {/* Password requirements */}
+              {password && (
+                <div className="mt-2 p-3 rounded-lg bg-slate-950/50 border border-slate-800 space-y-1.5">
+                  <p className="text-xs font-medium text-slate-400 mb-2">Password requirements:</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      {passwordValidation.minLength ? (
+                        <svg className="h-4 w-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span className={`text-xs ${passwordValidation.minLength ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        At least 8 characters
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {passwordValidation.hasCapital ? (
+                        <svg className="h-4 w-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span className={`text-xs ${passwordValidation.hasCapital ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        At least 1 capital letter
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {passwordValidation.hasNumber ? (
+                        <svg className="h-4 w-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span className={`text-xs ${passwordValidation.hasNumber ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        Contains a number
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {passwordValidation.hasSpecial ? (
+                        <svg className="h-4 w-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4 text-slate-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      )}
+                      <span className={`text-xs ${passwordValidation.hasSpecial ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        Contains a special character (!@#$%_&*...)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="animate-[fadeInUp_0.5s_ease-out_0.7s_both]">
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-2">
                 Confirm Password
               </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all duration-300 hover:border-slate-600"
-                placeholder="Confirm your password"
-                disabled={isLoading}
-                required
-                minLength={6}
-              />
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={`w-full px-4 py-3 rounded-lg border bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-300 hover:border-slate-600 ${
+                    confirmPassword && password === confirmPassword
+                      ? "border-emerald-500/50 focus:ring-emerald-500"
+                      : confirmPassword && password !== confirmPassword
+                      ? "border-red-500/50 focus:ring-red-500"
+                      : "border-slate-700 focus:ring-sky-500"
+                  }`}
+                  placeholder="Confirm your password"
+                  disabled={isLoading}
+                  required
+                  minLength={8}
+                />
+                {confirmPassword && password === confirmPassword && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="h-5 w-5 text-emerald-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                )}
+                {confirmPassword && password !== confirmPassword && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg
+                      className="h-5 w-5 text-red-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              {confirmPassword && password !== confirmPassword && (
+                <p className="mt-1 text-xs text-red-400">
+                  Passwords do not match
+                </p>
+              )}
+              {confirmPassword && password === confirmPassword && (
+                <p className="mt-1 text-xs text-emerald-400">
+                  Passwords match
+                </p>
+              )}
             </div>
 
             <button
