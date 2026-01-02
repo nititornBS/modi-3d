@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [returnUrl, setReturnUrl] = useState("");
   const googleButtonRef = useRef(null);
@@ -121,6 +122,7 @@ export default function LoginPage() {
 
   const handleGoogleCallback = async (response) => {
     setError("");
+    setIsGoogleLoading(true);
     setIsLoading(true);
 
     try {
@@ -150,6 +152,7 @@ export default function LoginPage() {
       setError(errorMsg);
       showError(errorMsg);
     } finally {
+      setIsGoogleLoading(false);
       setIsLoading(false);
     }
   };
@@ -190,7 +193,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all duration-300 hover:border-slate-600"
                 placeholder="Enter your email"
-                disabled={isLoading}
+                disabled={isLoading || isGoogleLoading}
                 required
                 autoFocus
               />
@@ -207,14 +210,14 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 rounded-lg border border-slate-700 bg-slate-950 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all duration-300 hover:border-slate-600"
                 placeholder="Enter your password"
-                disabled={isLoading}
+                disabled={isLoading || isGoogleLoading}
                 required
               />
             </div>
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isGoogleLoading}
               className="w-full py-3 rounded-lg bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white font-semibold shadow-lg shadow-sky-500/40 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] hover:shadow-xl hover:shadow-sky-500/50"
             >
               {isLoading ? "Signing in..." : "Sign In"}
@@ -235,11 +238,40 @@ export default function LoginPage() {
           <div 
             ref={googleButtonRef}
             className="w-full flex justify-center animate-[fadeIn_0.5s_ease-out_0.7s_both]"
-            style={{ minHeight: "40px" }}
+            style={{ minHeight: "40px", opacity: isGoogleLoading ? 0.5 : 1, pointerEvents: isGoogleLoading ? "none" : "auto" }}
           />
-          {isLoading && (
-            <div className="mt-2 text-center text-sm text-slate-400 animate-[fadeIn_0.4s_ease-out]">
-              Signing in with Google...
+          
+          {/* Google loading indicator */}
+          {isGoogleLoading && (
+            <div className="mt-4 p-4 rounded-lg bg-sky-500/10 border border-sky-500/20 animate-[fadeIn_0.4s_ease-out]">
+              <div className="flex items-center justify-center gap-3">
+                <svg
+                  className="animate-spin h-5 w-5 text-sky-400"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span className="text-sm font-medium text-sky-400">
+                  Signing in with Google...
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-center text-slate-400">
+                Please wait while we authenticate you
+              </p>
             </div>
           )}
 
