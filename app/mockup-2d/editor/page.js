@@ -204,6 +204,7 @@ function Mockup2DEditorContent() {
   const [is4PointMode, setIs4PointMode] = useState(false);
   const [perspectivePoints, setPerspectivePoints] = useState([]); // Array of 4 points for current design
   const dragInitialRef = useRef({ position: { x: 0, y: 0 }, mouseX: 0, mouseY: 0 }); // Track initial drag state
+  const dragUpdateRef = useRef({ pending: null, rafId: null });
   const [showMappingArea, setShowMappingArea] = useState(false); // Show mapping overlay
   const mappingAreaRef = useRef(null); // Ref for mapping area div
   const [isDraggingInMapping, setIsDraggingInMapping] = useState(false); // Track dragging in mapping area
@@ -281,25 +282,9 @@ function Mockup2DEditorContent() {
         const designWidth = billboardAreaWidth * designData.scale;
         const designHeight = designWidth / designAspect;
         
-        // Only apply padding constraint for non-card categories or when scale is reasonable
-        // Cards can scale up to 200% as per slider max
+        // Allow designs to grow freely based on scale
         let finalWidth = designWidth;
         let finalHeight = designHeight;
-        
-        if (currentTemplate.category !== "card" && designData.scale > 0.95) {
-          // For non-cards, limit to 95% if scale exceeds it
-          const padding = 0.95;
-          const maxWidth = billboardAreaWidth * padding;
-          const maxHeight = billboardAreaHeight * padding;
-          
-          if (finalWidth > maxWidth || finalHeight > maxHeight) {
-            const widthRatio = maxWidth / finalWidth;
-            const heightRatio = maxHeight / finalHeight;
-            const scaleRatio = Math.min(widthRatio, heightRatio);
-            finalWidth *= scaleRatio;
-            finalHeight *= scaleRatio;
-          }
-        }
         
         // Use absolute coordinates if set, otherwise default to center of billboard
         let designX, designY;
@@ -760,44 +745,54 @@ function Mockup2DEditorContent() {
     const deltaX = x - dragInitialRef.current.mouseX;
     const deltaY = y - dragInitialRef.current.mouseY;
     
-    // Calculate new position
-    let newX = dragInitialRef.current.position.x + deltaX;
-    let newY = dragInitialRef.current.position.y + deltaY;
-    
-    setUserDesigns((prev) =>
-      prev.map((design) => {
-        if (design.id !== draggingDesignId) return design;
-        
-        // If 4 points are set, constrain movement within that area
-        if (design.perspectivePoints && design.perspectivePoints.length === 4) {
-          // Get image dimensions
-          const img = userDesignsRef.current[design.id];
-          if (img) {
-            const designAspect = img.width / img.height;
-            const billboardAreaWidth = canvas.width * currentTemplate.areaWidth;
-            const billboardAreaHeight = canvas.height * currentTemplate.areaHeight;
-            const designWidth = billboardAreaWidth * design.scale;
-            const designHeight = designWidth / designAspect;
-            
-            // Get constrained bounds within the 4-point area
-            const bounds = getConstrainedBounds(design.perspectivePoints, designWidth, designHeight);
-            
-            // Clamp position to stay within the 4-point area
-            newX = Math.max(bounds.minX, Math.min(bounds.maxX, newX));
-            newY = Math.max(bounds.minY, Math.min(bounds.maxY, newY));
-          }
-        } else {
-          // Clamp to canvas boundaries if no 4 points
-          const canvasWidth = canvas.width;
-          const canvasHeight = canvas.height;
-          newX = Math.max(0, Math.min(canvasWidth, newX));
-          newY = Math.max(0, Math.min(canvasHeight, newY));
-        }
-        
-        // Update position (4 points stay fixed)
-        return { ...design, position: { x: newX, y: newY } };
-      })
-    );
+    // Base new position before constraints
+    const baseX = dragInitialRef.current.position.x + deltaX;
+    const baseY = dragInitialRef.current.position.y + deltaY;
+
+    // Store latest position and throttle updates with requestAnimationFrame
+    dragUpdateRef.current.pending = { x: baseX, y: baseY };
+
+    if (dragUpdateRef.current.rafId == null) {
+      dragUpdateRef.current.rafId = requestAnimationFrame(() => {
+        const pending = dragUpdateRef.current.pending;
+        dragUpdateRef.current.rafId = null;
+        if (!pending || !canvasRef.current) return;
+
+        const canvasNow = canvasRef.current;
+        let newX = pending.x;
+        let newY = pending.y;
+
+        setUserDesigns((prev) =>
+          prev.map((design) => {
+            if (design.id !== draggingDesignId) return design;
+
+            // If 4 points are set, constrain movement within that area
+            if (design.perspectivePoints && design.perspectivePoints.length === 4) {
+              const img = userDesignsRef.current[design.id];
+              if (img) {
+                const designAspect = img.width / img.height;
+                const billboardAreaWidth = canvasNow.width * currentTemplate.areaWidth;
+                const billboardAreaHeight = canvasNow.height * currentTemplate.areaHeight;
+                const designWidth = billboardAreaWidth * design.scale;
+                const designHeight = designWidth / designAspect;
+
+                const bounds = getConstrainedBounds(design.perspectivePoints, designWidth, designHeight);
+
+                newX = Math.max(bounds.minX, Math.min(bounds.maxX, newX));
+                newY = Math.max(bounds.minY, Math.min(bounds.maxY, newY));
+              }
+            } else {
+              const canvasWidth = canvasNow.width;
+              const canvasHeight = canvasNow.height;
+              newX = Math.max(0, Math.min(canvasWidth, newX));
+              newY = Math.max(0, Math.min(canvasHeight, newY));
+            }
+
+            return { ...design, position: { x: newX, y: newY } };
+          })
+        );
+      });
+    }
   };
 
   const handleMouseUp = () => {
@@ -805,6 +800,12 @@ function Mockup2DEditorContent() {
     setDraggingDesignId(null);
     setIsPanning(false);
     setIsDraggingInMapping(false);
+    // Clear any pending drag animation frame
+    if (dragUpdateRef.current.rafId != null) {
+      cancelAnimationFrame(dragUpdateRef.current.rafId);
+      dragUpdateRef.current.rafId = null;
+    }
+    dragUpdateRef.current.pending = null;
   };
 
   const handleExport = () => {
@@ -838,25 +839,9 @@ function Mockup2DEditorContent() {
       const designWidth = billboardAreaWidth * designData.scale;
       const designHeight = designWidth / designAspect;
       
-      // Only apply padding constraint for non-card categories or when scale is reasonable
-      // Cards can scale up to 200% as per slider max
+      // Allow designs to grow freely based on scale
       let finalWidth = designWidth;
       let finalHeight = designHeight;
-      
-      if (currentTemplate.category !== "card" && designData.scale > 0.95) {
-        // For non-cards, limit to 95% if scale exceeds it
-        const padding = 0.95;
-        const maxWidth = billboardAreaWidth * padding;
-        const maxHeight = billboardAreaHeight * padding;
-        
-        if (finalWidth > maxWidth || finalHeight > maxHeight) {
-          const widthRatio = maxWidth / finalWidth;
-          const heightRatio = maxHeight / finalHeight;
-          const scaleRatio = Math.min(widthRatio, heightRatio);
-          finalWidth *= scaleRatio;
-          finalHeight *= scaleRatio;
-        }
-      }
       
       let designX, designY;
       if (designData.position.x !== null && designData.position.y !== null) {
@@ -1146,22 +1131,68 @@ function Mockup2DEditorContent() {
                       <label className="block text-sm text-slate-400 mb-2">
                         Size: {Math.round((userDesigns.find((d) => d.id === selectedDesignId)?.scale || 0.3) * 100)}%
                       </label>
-                      <input
-                        type="range"
-                        min="0.1"
-                        max={currentTemplate.category === "card" ? "2.0" : "0.9"}
-                        step="0.05"
-                        value={userDesigns.find((d) => d.id === selectedDesignId)?.scale || 0.3}
-                        onChange={(e) => {
-                          const newScale = parseFloat(e.target.value);
-                          setUserDesigns((prev) =>
-                            prev.map((design) =>
-                              design.id === selectedDesignId ? { ...design, scale: newScale } : design
-                            )
-                          );
-                        }}
-                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDesigns((prev) => {
+                              const minScale = 0.01;
+                              const step = 0.05;
+                              return prev.map((design) => {
+                                if (design.id !== selectedDesignId) return design;
+                                const current = design.scale ?? 0.3;
+                                let updated = current - step;
+                                if (updated < minScale) updated = minScale;
+                                return { ...design, scale: updated };
+                              });
+                            });
+                          }}
+                          className="px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white text-sm transition-colors"
+                        >
+                          -
+                        </button>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={1}
+                            step={5}
+                            value={Math.round((userDesigns.find((d) => d.id === selectedDesignId)?.scale || 0.3) * 100)}
+                            onChange={(e) => {
+                              const raw = parseFloat(e.target.value);
+                              if (Number.isNaN(raw)) return;
+                              const minPercent = 1;
+                              const safe = Math.max(minPercent, raw);
+                              const newScale = safe / 100;
+                              setUserDesigns((prev) =>
+                                prev.map((design) =>
+                                  design.id === selectedDesignId ? { ...design, scale: newScale } : design
+                                )
+                              );
+                            }}
+                            className="w-16 px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDesigns((prev) => {
+                              const minScale = 0.01;
+                              const step = 0.05;
+                              return prev.map((design) => {
+                                if (design.id !== selectedDesignId) return design;
+                                const current = design.scale ?? 0.3;
+                                let updated = current + step;
+                                if (updated < minScale) updated = minScale;
+                                return { ...design, scale: updated };
+                              });
+                            });
+                          }}
+                          className="px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white text-sm transition-colors"
+                        >
+                          +
+                        </button>
+                      </div>
                       <div className="flex justify-between text-xs text-slate-500 mt-1">
                         <span>Small</span>
                         <span>{currentTemplate.category === "card" ? "Very Large" : "Large"}</span>

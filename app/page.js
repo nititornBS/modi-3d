@@ -54,8 +54,16 @@ export default function LandingPage() {
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
       <Navbar subtitle="" />
 
-      <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
+      <section className="relative flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
+        {/* Animated wave / gradient background */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60 blur-3xl"
+        >
+          <div className="absolute -left-40 top-0 h-80 w-96 bg-gradient-to-br from-sky-500/50 via-cyan-400/40 to-emerald-400/40 rounded-full mix-blend-screen animate-[spin_18s_linear_infinite]" />
+          <div className="absolute -right-48 bottom-0 h-96 w-[28rem] bg-gradient-to-tr from-purple-500/40 via-sky-400/30 to-cyan-300/40 rounded-full mix-blend-screen animate-[spin_24s_linear_infinite_reverse]" />
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
           {/* Header */}
           <div className="text-center mb-12 sm:mb-16 space-y-4 sm:space-y-6">
             <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-tight animate-[fadeInUp_0.8s_ease-out]">
