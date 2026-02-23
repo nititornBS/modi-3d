@@ -84,9 +84,9 @@ const DEFAULT_CARD_CONFIG = {
   areaX: 0.5,
   areaY: 0.5,
   perspective: {
-    rotation: -12,
-    skewX: 0.12,
-    skewY: -0.08,
+    rotation: -12,   // degrees of Z rotation
+    skewX: 0.28,     // multiplied by 45 → ~12.6° skewX
+    skewY: -0.10,    // multiplied by 45 → ~-4.5° skewY
   },
 };
 

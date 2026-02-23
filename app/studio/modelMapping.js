@@ -58,13 +58,13 @@ export const MODEL_FILES = {
 
       description: "Classic tea mug with handle",
 
-      file: `${BASE_MODEL_PATH}/Cups/teamugobj.obj`,
+      file: `${BASE_MODEL_PATH}/Cups/cup.obj`,
 
       type: "obj",
 
       icon: "☕",
       // Optional preview image (add when available)
-      preview: `${BASE_MODEL_PATH}/Cups/teamugobj.png`
+      preview: `${BASE_MODEL_PATH}/Cups/cup.png`
 
     },
 
@@ -140,21 +140,37 @@ export const MODEL_FILES = {
 
     // T-shirt model file not found - uncomment when file is added
 
-    // { 
+    { 
+      id: "shirt-1", 
+      displayName: "Ringer T-Shirte", 
+      description: "Ringer T-Shirte model",
+      file: `${BASE_MODEL_PATH}/Apparel/Shirt1.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Apparel/Shirt1.png`
+    },
+    { 
 
-    //   id: "shirt-1", 
+      id: "Pants-1", 
+      displayName: "Ringer Pants", 
+      description: "Ringer Pants model",
+      file: `${BASE_MODEL_PATH}/Apparel/Pants1.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Apparel/Pants1.jpg`
+    },
+        { 
 
-    //   displayName: "Classic T-Shirt", 
+      id: "Gloves-1", 
+      displayName: "Ringer Gloves", 
+      description: "Ringer Gloves model",
+      file: `${BASE_MODEL_PATH}/Apparel/Gloves1.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Apparel/Gloves1.jpg`
+    },
 
-    //   description: "Classic crew neck t-shirt",
 
-    //   file: `${BASE_MODEL_PATH}/t_shirt.glb`,
-
-    //   type: "glb",
-
-    //   icon: "👕"
-
-    // },
 
   ],
 
@@ -168,7 +184,6 @@ export const MODEL_FILES = {
   // add an entry here pointing to the correct path.
   bottle: [
     { 
-
       id: "bottle-1", 
       displayName: "Pill Bottle", 
       description: "Pill bottle model",
@@ -176,6 +191,24 @@ export const MODEL_FILES = {
       type: "obj",
       icon: "🍼",
       preview: `${BASE_MODEL_PATH}/Bottles/Pill_bottle.png`
+    },
+    { 
+      id: "bottle-2", 
+      displayName: "Water Bottle2", 
+      description: "Water bottle model",
+      file: `${BASE_MODEL_PATH}/Bottles/BOTTLE2.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Bottles/BOTTLE2.jpg`
+    },
+    { 
+      id: "bottle-3", 
+      displayName: "Water Bottle3", 
+      description: "Water bottle model",
+      file: `${BASE_MODEL_PATH}/Bottles/BOTTLE3.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Bottles/BOTTLE3.jpg`
     },
     // {
     //   id: "bottle-1",

@@ -1,1628 +1,1036 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import Link from "next/link";
 import { TEMPLATES } from "../templates";
 
-// Helper function to apply perspective transformation using 4 points
-// Constrains image to the 4-point area while maintaining aspect ratio and size
-function applyPerspectiveTransform(ctx, srcX, srcY, srcWidth, srcHeight, dstPoints) {
-  // Calculate bounding box of the 4 points
-  const minX = Math.min(dstPoints[0].x, dstPoints[1].x, dstPoints[2].x, dstPoints[3].x);
-  const maxX = Math.max(dstPoints[0].x, dstPoints[1].x, dstPoints[2].x, dstPoints[3].x);
-  const minY = Math.min(dstPoints[0].y, dstPoints[1].y, dstPoints[2].y, dstPoints[3].y);
-  const maxY = Math.max(dstPoints[0].y, dstPoints[1].y, dstPoints[2].y, dstPoints[3].y);
-  
-  const boundingWidth = maxX - minX;
-  const boundingHeight = maxY - minY;
-  
-  // Calculate average distances for width and height from the 4 points
-  const avgWidth = (
-    Math.abs(dstPoints[1].x - dstPoints[0].x) +
-    Math.abs(dstPoints[2].x - dstPoints[3].x)
-  ) / 2;
-  const avgHeight = (
-    Math.abs(dstPoints[3].y - dstPoints[0].y) +
-    Math.abs(dstPoints[2].y - dstPoints[1].y)
-  ) / 2;
-  
-  // Use the smaller of bounding box or average distances to maintain size
-  const targetWidth = Math.min(boundingWidth, avgWidth);
-  const targetHeight = Math.min(boundingHeight, avgHeight);
-  
-  // Calculate scale to fit image within target area while maintaining aspect ratio
-  const scaleX = targetWidth / srcWidth;
-  const scaleY = targetHeight / srcHeight;
-  const scale = Math.min(scaleX, scaleY, 1.0); // Don't scale up, maintain aspect ratio
-  
-  // Calculate center of source image
-  const srcCenterX = srcX + srcWidth / 2;
-  const srcCenterY = srcY + srcHeight / 2;
-  
-  // Calculate center of destination (average of 4 points)
-  const dstCenterX = (dstPoints[0].x + dstPoints[1].x + dstPoints[2].x + dstPoints[3].x) / 4;
-  const dstCenterY = (dstPoints[0].y + dstPoints[1].y + dstPoints[2].y + dstPoints[3].y) / 4;
-  
-  // Calculate vectors for top and left edges (normalized)
-  const topVecX = dstPoints[1].x - dstPoints[0].x;
-  const topVecY = dstPoints[1].y - dstPoints[0].y;
-  const topLength = Math.sqrt(topVecX * topVecX + topVecY * topVecY);
-  const topNormX = topLength > 0 ? topVecX / topLength : 1;
-  const topNormY = topLength > 0 ? topVecY / topLength : 0;
-  
-  const leftVecX = dstPoints[3].x - dstPoints[0].x;
-  const leftVecY = dstPoints[3].y - dstPoints[0].y;
-  const leftLength = Math.sqrt(leftVecX * leftVecX + leftVecY * leftVecY);
-  const leftNormX = leftLength > 0 ? leftVecX / leftLength : 0;
-  const leftNormY = leftLength > 0 ? leftVecY / leftLength : 1;
-  
-  // Calculate rotation from top edge
-  const angle = Math.atan2(topNormY, topNormX);
-  
-  // Calculate skew (shear) from the perpendicularity of top and left edges
-  const dotProduct = topNormX * leftNormX + topNormY * leftNormY;
-  const skewX = dotProduct * 0.3; // Limit skew to prevent wild distortion
-  
-  // Apply transformations: translate to destination center, rotate, scale, apply limited skew
-  ctx.translate(dstCenterX, dstCenterY);
-  ctx.rotate(angle);
-  ctx.transform(scale, 0, skewX * scale, scale, 0, 0);
-  ctx.translate(-srcCenterX, -srcCenterY);
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const BLEND_MODES = [
+  { id: "normal",   label: "Normal",   canvas: "source-over" },
+  { id: "multiply", label: "Multiply", canvas: "multiply"    },
+  { id: "screen",   label: "Screen",   canvas: "screen"      },
+  { id: "overlay",  label: "Overlay",  canvas: "overlay"     },
+];
+
+const HANDLES = [
+  { id: "nw", x: 0,   y: 0,   cur: "nw-resize" },
+  { id: "n",  x: 0.5, y: 0,   cur: "n-resize"  },
+  { id: "ne", x: 1,   y: 0,   cur: "ne-resize" },
+  { id: "e",  x: 1,   y: 0.5, cur: "e-resize"  },
+  { id: "se", x: 1,   y: 1,   cur: "se-resize" },
+  { id: "s",  x: 0.5, y: 1,   cur: "s-resize"  },
+  { id: "sw", x: 0,   y: 1,   cur: "sw-resize" },
+  { id: "w",  x: 0,   y: 0.5, cur: "w-resize"  },
+];
+
+// corner order: TL, TR, BR, BL
+const CORNER_COLORS = ["#f472b6", "#818cf8", "#34d399", "#fb923c"];
+
+function defaultBlend(category) {
+  if (category === "banner") return { opacity: 0.97, blendMode: "normal" };
+  return { opacity: 0.88, blendMode: "multiply" };
 }
 
-// Helper function to apply subtle effects for cup category to make image look more natural
-// Uses canvas transformations for better performance
-function applyCupWarp(ctx, image, x, y, width, height) {
-  // Save context state
-  ctx.save();
-  
-  // Apply subtle horizontal scaling to simulate cup curvature
-  // Slightly compress the middle to create a wrap-around effect
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
-  
-  // Move to center, apply slight horizontal scale, then draw
-  ctx.translate(centerX, centerY);
-  // Subtle horizontal compression (0.96 = 4% compression in middle)
-  ctx.scale(0.96, 1.0);
-  ctx.translate(-centerX, -centerY);
-  
-  // Draw the image
-  ctx.drawImage(image, x, y, width, height);
-  
-  // Restore context
-  ctx.restore();
-}
+// ─── Perspective math ─────────────────────────────────────────────────────────
+// Computes CSS matrix3d from 4 source → 4 destination point pairs (px coords).
+// Uses the adjugate / basis-of-points homography approach.
 
-// Helper function to check if a point is inside a polygon (using ray casting algorithm)
-function isPointInPolygon(point, polygon) {
-  let inside = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x, yi = polygon[i].y;
-    const xj = polygon[j].x, yj = polygon[j].y;
-    const intersect = ((yi > point.y) !== (yj > point.y)) &&
-      (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-// Helper function to get bounding box of 4 points with padding for image size
-function getConstrainedBounds(points, imageWidth, imageHeight) {
-  const minX = Math.min(points[0].x, points[1].x, points[2].x, points[3].x);
-  const maxX = Math.max(points[0].x, points[1].x, points[2].x, points[3].x);
-  const minY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y);
-  const maxY = Math.max(points[0].y, points[1].y, points[2].y, points[3].y);
-  
-  // Add padding to account for image dimensions (half width/height on each side)
-  return {
-    minX: minX + imageWidth / 2,
-    maxX: maxX - imageWidth / 2,
-    minY: minY + imageHeight / 2,
-    maxY: maxY - imageHeight / 2
-  };
-}
-
-// Helper function to apply grayscale filter to an image
-function applyGrayscaleFilter(image, callback) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = image.width || image.naturalWidth;
-  canvas.height = image.height || image.naturalHeight;
-  
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  
-  // Convert to grayscale
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    data[i] = gray;     // R
-    data[i + 1] = gray; // G
-    data[i + 2] = gray; // B
-  }
-  
-  ctx.putImageData(imageData, 0, 0);
-  
-  const filteredImg = new Image();
-  filteredImg.onload = () => callback(filteredImg);
-  filteredImg.src = canvas.toDataURL();
-}
-
-// Helper function to apply 2-tone (duotone) filter to an image
-function applyDuotoneFilter(image, color1 = [139, 92, 246], color2 = [236, 72, 153], callback) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = image.width || image.naturalWidth;
-  canvas.height = image.height || image.naturalHeight;
-  
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  
-  // Convert to grayscale first, then apply duotone
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    const normalizedGray = gray / 255; // 0 to 1
-    
-    // Blend between color1 (dark) and color2 (light) based on gray value
-    data[i] = color1[0] * (1 - normalizedGray) + color2[0] * normalizedGray;     // R
-    data[i + 1] = color1[1] * (1 - normalizedGray) + color2[1] * normalizedGray; // G
-    data[i + 2] = color1[2] * (1 - normalizedGray) + color2[2] * normalizedGray; // B
-  }
-  
-  ctx.putImageData(imageData, 0, 0);
-  
-  const filteredImg = new Image();
-  filteredImg.onload = () => callback(filteredImg);
-  filteredImg.src = canvas.toDataURL();
-}
-
-function Mockup2DEditorContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const templateId = searchParams.get("template");
-  
-  const [bannerImage, setBannerImage] = useState(null);
-  const [userDesigns, setUserDesigns] = useState([]); // Array of design objects
-  const [selectedDesignId, setSelectedDesignId] = useState(null); // Currently selected design
-  const [isProcessing, setIsProcessing] = useState(false);
-  const canvasRef = useRef(null);
-  const bannerImageRef = useRef(null);
-  const userDesignsRef = useRef({}); // Map of designId -> image object
-  const originalImagesRef = useRef({}); // Map of designId -> original image object (for resetting filters)
-  const containerRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [draggingDesignId, setDraggingDesignId] = useState(null);
-  const [zoom, setZoom] = useState(1.0);
-  const baseScaleRef = useRef(1.0);
-  const [isPanning, setIsPanning] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const panInitialRef = useRef({ mouse: { x: 0, y: 0 }, offset: { x: 0, y: 0 } });
-  const [is4PointMode, setIs4PointMode] = useState(false);
-  const [perspectivePoints, setPerspectivePoints] = useState([]); // Array of 4 points for current design
-  const dragInitialRef = useRef({ position: { x: 0, y: 0 }, mouseX: 0, mouseY: 0 }); // Track initial drag state
-  const dragUpdateRef = useRef({ pending: null, rafId: null });
-  const [showMappingArea, setShowMappingArea] = useState(false); // Show mapping overlay
-  const mappingAreaRef = useRef(null); // Ref for mapping area div
-  const [isDraggingInMapping, setIsDraggingInMapping] = useState(false); // Track dragging in mapping area
-  const [showColorPalette, setShowColorPalette] = useState(false); // Show color palette for duotone
-  const [duotoneColor1, setDuotoneColor1] = useState([139, 92, 246]); // Purple (default)
-  const [duotoneColor2, setDuotoneColor2] = useState([236, 72, 153]); // Pink (default)
-  
-  // Popular colors for logo/mockup tinting
-  // Each color has a dark (shadow) and light (highlight) variant for duotone effect
-  const popularColors = [
-    { name: "Black", dark: [0, 0, 0], light: [100, 100, 100] },
-    { name: "White", dark: [200, 200, 200], light: [255, 255, 255] },
-    { name: "Gold", dark: [184, 134, 11], light: [255, 215, 0] },
-    { name: "Navy Blue", dark: [0, 20, 60], light: [30, 60, 120] },
-    { name: "Crimson Red", dark: [139, 0, 0], light: [220, 20, 60] },
+function _adj3(m) {
+  return [
+    m[4]*m[8]-m[5]*m[7], m[2]*m[7]-m[1]*m[8], m[1]*m[5]-m[2]*m[4],
+    m[5]*m[6]-m[3]*m[8], m[0]*m[8]-m[2]*m[6], m[2]*m[3]-m[0]*m[5],
+    m[3]*m[7]-m[4]*m[6], m[1]*m[6]-m[0]*m[7], m[0]*m[4]-m[1]*m[3],
   ];
+}
+function _mul3(a, b) {
+  const c = Array(9).fill(0);
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      for (let k = 0; k < 3; k++) c[3*i+j] += a[3*i+k] * b[3*k+j];
+  return c;
+}
+function _mulv3(m, v) {
+  return [
+    m[0]*v[0]+m[1]*v[1]+m[2]*v[2],
+    m[3]*v[0]+m[4]*v[1]+m[5]*v[2],
+    m[6]*v[0]+m[7]*v[1]+m[8]*v[2],
+  ];
+}
+function _basisToPoints(pts) {
+  const m = [pts[0].x,pts[1].x,pts[2].x, pts[0].y,pts[1].y,pts[2].y, 1,1,1];
+  const v = _mulv3(_adj3(m), [pts[3].x, pts[3].y, 1]);
+  return _mul3(m, [v[0],0,0, 0,v[1],0, 0,0,v[2]]);
+}
+function _homography(src, dst) {
+  const H = _mul3(_basisToPoints(dst), _adj3(_basisToPoints(src)));
+  const s = H[8] || 1;
+  return H.map(v => v / s);
+}
+// H is row-major; CSS matrix3d is column-major 4×4 with perspective in last row
+function _toCSSMatrix3d(H) {
+  return `matrix3d(${H[0]},${H[3]},0,${H[6]},${H[1]},${H[4]},0,${H[7]},0,0,1,0,${H[2]},${H[5]},0,${H[8]})`;
+}
 
-  const currentTemplate =
-    (templateId && TEMPLATES[templateId]) || TEMPLATES["billboard-street"];
+// design.corners = [{dx,dy} × 4] offsets (in container-fraction units) from natural corners.
+// Returns a CSS transform string for the img element inside the wrapper div.
+function computePerspectiveCSS(design, cW, cH) {
+  const W = design.w * cW, H = design.h * cH;
+  const c = design.corners;
+  const src = [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
+  const dst = [
+    { x: c[0].dx * cW,         y: c[0].dy * cH       },
+    { x: W + c[1].dx * cW,     y: c[1].dy * cH       },
+    { x: W + c[2].dx * cW,     y: H + c[2].dy * cH   },
+    { x: c[3].dx * cW,         y: H + c[3].dy * cH   },
+  ];
+  return _toCSSMatrix3d(_homography(src, dst));
+}
 
-  // Draw composite image
-  const drawComposite = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !bannerImageRef.current || !currentTemplate || !containerRef.current) return;
+// Returns the 4 actual corner positions in wrapper-relative fractions.
+// Used to position handles on screen.
+function cornerHandlePositions(design) {
+  const c = design.corners;
+  return [
+    { x: c[0].dx / design.w,         y: c[0].dy / design.h         },
+    { x: 1 + c[1].dx / design.w,     y: c[1].dy / design.h         },
+    { x: 1 + c[2].dx / design.w,     y: 1 + c[2].dy / design.h     },
+    { x: c[3].dx / design.w,         y: 1 + c[3].dy / design.h     },
+  ];
+}
 
-    const ctx = canvas.getContext("2d");
-    const banner = bannerImageRef.current;
-    
-    // Use actual image dimensions for real scale (internal canvas)
-    const actualWidth = banner.naturalWidth || banner.width;
-    const actualHeight = banner.naturalHeight || banner.height;
-    canvas.width = actualWidth;
-    canvas.height = actualHeight;
-    
-    // Calculate scale based on container size and image dimensions
-    const container = containerRef.current;
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-    
-    // Calculate base scale to fit container while maintaining aspect ratio
-    const scaleX = containerWidth / actualWidth;
-    const scaleY = containerHeight / actualHeight;
-    const baseScale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
-    baseScaleRef.current = baseScale;
-    
-    // Apply zoom to base scale
-    const previewScale = baseScale * zoom;
-    
-    // Calculate display dimensions maintaining aspect ratio
-    const displayWidth = actualWidth * previewScale;
-    const displayHeight = actualHeight * previewScale;
-    
-    // Set display size based on calculated scale with zoom
-    // Remove maxWidth constraint to allow zooming beyond container
-    canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
-    canvas.style.maxWidth = 'none';
-    canvas.style.maxHeight = 'none';
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(banner, 0, 0, canvas.width, canvas.height);
-    
-    // Draw all user designs
-    userDesigns.forEach((designData) => {
-      const design = userDesignsRef.current[designData.id];
-      if (!design) return;
-      
-      // Only draw if we have valid intrinsic size
-      if (design.naturalWidth > 0 && design.naturalHeight > 0) {
-        const designAspect = design.width / design.height;
-        
-        const billboardAreaWidth = canvas.width * currentTemplate.areaWidth;
-        const billboardAreaHeight = canvas.height * currentTemplate.areaHeight;
-        
-        const designWidth = billboardAreaWidth * designData.scale;
-        const designHeight = designWidth / designAspect;
-        
-        // Allow designs to grow freely based on scale
-        let finalWidth = designWidth;
-        let finalHeight = designHeight;
-        
-        // Use absolute coordinates if set, otherwise default to center of billboard
-        let designX, designY;
-        if (designData.position.x !== null && designData.position.y !== null) {
-          // Absolute pixel coordinates - center the image at the position
-          designX = designData.position.x - (finalWidth / 2);
-          designY = designData.position.y - (finalHeight / 2);
-        } else {
-          // Default to center of billboard area
-          const billboardStartX = canvas.width * currentTemplate.areaX;
-          const billboardStartY = canvas.height * currentTemplate.areaY;
-          designX = billboardStartX + (billboardAreaWidth / 2) - (finalWidth / 2);
-          designY = billboardStartY + (billboardAreaHeight / 2) - (finalHeight / 2);
-        }
-        
-        ctx.save();
-        // Apply reduced opacity to all categories for more natural look
-        ctx.globalAlpha = 0.95;
-        
-        // Special handling for cup category
-        if (currentTemplate.category === "cup") {
-          // Use softer shadow for cups
-          ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
-          ctx.shadowBlur = 10;
-          ctx.shadowOffsetX = 2;
-          ctx.shadowOffsetY = 2;
-          // Use multiply blend mode for better integration with cup surface
-          ctx.globalCompositeOperation = 'multiply';
-        } else if (currentTemplate.category !== "banner") {
-          // Standard drop shadow for other categories
-          ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
-          ctx.shadowBlur = 15;
-          ctx.shadowOffsetX = 3;
-          ctx.shadowOffsetY = 3;
-          ctx.globalCompositeOperation = 'source-over';
-        } else {
-          ctx.globalCompositeOperation = 'source-over';
-        }
-        
-        // Check if 4-point perspective is set
-        if (designData.perspectivePoints && designData.perspectivePoints.length === 4) {
-          // Use 4-point perspective transformation
-          applyPerspectiveTransform(
-            ctx,
-            designX,
-            designY,
-            finalWidth,
-            finalHeight,
-            designData.perspectivePoints
-          );
-          // Apply cup warp if cup category
-          if (currentTemplate.category === "cup") {
-            applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
-          } else {
-            ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
-          }
-        } else {
-          // Use standard transformation
-          const centerX = designX + finalWidth / 2;
-          const centerY = designY + finalHeight / 2;
-          
-          // Move to center for transformations
-          ctx.translate(centerX, centerY);
-          
-          // Apply user rotation (starts at 0, only rotates when slider is adjusted)
-          const userRotation = designData.rotation !== undefined ? designData.rotation : 0;
-          if (userRotation !== 0) {
-            ctx.rotate((userRotation * Math.PI) / 180);
-          }
-          
-          // Move back to draw at correct position
-          ctx.translate(-centerX, -centerY);
-          
-          // Apply cup warp if cup category
-          if (currentTemplate.category === "cup") {
-            applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
-          } else {
-            ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
-          }
-        }
-        ctx.restore();
-        
-        // Draw 4-point perspective indicators if points are set
-        if (designData.perspectivePoints && designData.perspectivePoints.length > 0) {
-          ctx.save();
-          ctx.strokeStyle = '#8b5cf6'; // Purple color
-          ctx.fillStyle = '#8b5cf6';
-          ctx.lineWidth = 2;
-          
-          designData.perspectivePoints.forEach((point, index) => {
-            // Draw point
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Draw number label
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText((index + 1).toString(), point.x, point.y - 20);
-            ctx.fillStyle = '#8b5cf6';
-            
-            // Draw connecting lines if we have multiple points
-            if (index > 0) {
-              ctx.beginPath();
-              ctx.moveTo(designData.perspectivePoints[index - 1].x, designData.perspectivePoints[index - 1].y);
-              ctx.lineTo(point.x, point.y);
-              ctx.stroke();
-            }
-          });
-          
-          // Draw line from last to first if we have 4 points
-          if (designData.perspectivePoints.length === 4) {
-            ctx.beginPath();
-            ctx.moveTo(designData.perspectivePoints[3].x, designData.perspectivePoints[3].y);
-            ctx.lineTo(designData.perspectivePoints[0].x, designData.perspectivePoints[0].y);
-            ctx.stroke();
-          }
-          
-          ctx.restore();
-        }
-      }
-    });
-  }, [userDesigns, currentTemplate, zoom, is4PointMode]);
+// ─── Canvas perspective warp (scanline) ──────────────────────────────────────
+// Draws img warped to the dst quadrilateral [TL, TR, BR, BL] (canvas px coords).
 
-  // Load banner image on mount / when template changes
-  useEffect(() => {
-    if (!currentTemplate) {
-      router.push("/mockup-2d");
-      return;
+function _drawPerspectiveWarp(ctx, img, dst, opacity, blendMode) {
+  const [TL, TR, BR, BL] = dst;
+  const sW = img.naturalWidth, sH = img.naturalHeight;
+  const N = Math.min(sH, 400);
+  ctx.globalAlpha = opacity;
+  ctx.globalCompositeOperation = blendMode;
+  for (let i = 0; i < N; i++) {
+    const t0 = i / N, t1 = (i + 1) / N;
+    const sy0 = t0 * sH, sH1 = (t1 - t0) * sH;
+    const lx0=TL.x+(BL.x-TL.x)*t0, ly0=TL.y+(BL.y-TL.y)*t0;
+    const rx0=TR.x+(BR.x-TR.x)*t0, ry0=TR.y+(BR.y-TR.y)*t0;
+    const lx1=TL.x+(BL.x-TL.x)*t1, ly1=TL.y+(BL.y-TL.y)*t1;
+    const rx1=TR.x+(BR.x-TR.x)*t1, ry1=TR.y+(BR.y-TR.y)*t1;
+    const lxM=(lx0+lx1)/2, lyM=(ly0+ly1)/2;
+    const rxM=(rx0+rx1)/2, ryM=(ry0+ry1)/2;
+    const dW=Math.hypot(rxM-lxM,ryM-lyM);
+    const dH=Math.hypot((lx1-lx0+rx1-rx0)/2,(ly1-ly0+ry1-ry0)/2);
+    if (dW < 0.5 || dH < 0.5) continue;
+    const ang=Math.atan2(ryM-lyM,rxM-lxM);
+    const cos=Math.cos(ang), sin=Math.sin(ang);
+    const sx=dW/sW, sy=dH/sH1;
+    const syM=sy0+sH1/2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(lx0,ly0); ctx.lineTo(rx0,ry0); ctx.lineTo(rx1,ry1); ctx.lineTo(lx1,ly1);
+    ctx.closePath(); ctx.clip();
+    ctx.setTransform(sx*cos,sx*sin,-sy*sin,sy*cos, lxM+sy*sin*syM, lyM-sy*cos*syM);
+    ctx.drawImage(img, 0, sy0, sW, sH1, 0, sy0, sW, sH1);
+    ctx.restore();
+  }
+}
+
+// ─── Filter helpers ───────────────────────────────────────────────────────────
+
+function filterGrayscale(src, cb) {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < d.data.length; i += 4) {
+      const g = d.data[i]*0.299 + d.data[i+1]*0.587 + d.data[i+2]*0.114;
+      d.data[i] = d.data[i+1] = d.data[i+2] = g;
     }
+    ctx.putImageData(d, 0, 0);
+    cb(c.toDataURL());
+  };
+  img.src = src;
+}
 
+function filterDuotone(src, c1, c2, cb) {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < d.data.length; i += 4) {
+      const t = (d.data[i]*0.299 + d.data[i+1]*0.587 + d.data[i+2]*0.114) / 255;
+      d.data[i]   = c1[0]*(1-t) + c2[0]*t;
+      d.data[i+1] = c1[1]*(1-t) + c2[1]*t;
+      d.data[i+2] = c1[2]*(1-t) + c2[2]*t;
+    }
+    ctx.putImageData(d, 0, 0);
+    cb(c.toDataURL());
+  };
+  img.src = src;
+}
+
+// ─── DesignElement ────────────────────────────────────────────────────────────
+
+function DesignElement({
+  design, isSelected, cDims,
+  onPointerDownBody, onPointerDownHandle, onPointerDownRotate, onPointerDownCorner, onSelect,
+}) {
+  const hasPerspective = !!design.corners;
+
+  // CSS matrix3d for warp mode
+  const perspectiveTransform = hasPerspective && cDims.w > 1
+    ? computePerspectiveCSS(design, cDims.w, cDims.h)
+    : null;
+
+  // Handle positions in wrapper-relative fractions
+  const hPos = hasPerspective ? cornerHandlePositions(design) : null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left:   `${design.x * 100}%`,
+        top:    `${design.y * 100}%`,
+        width:  `${design.w * 100}%`,
+        height: `${design.h * 100}%`,
+        // In warp mode the img carries the transform, wrapper stays flat
+        transform: hasPerspective
+          ? "none"
+          : `rotate(${design.rotation}deg) skewX(${design.skewX || 0}deg) skewY(${design.skewY || 0}deg)`,
+        transformOrigin: "center center",
+        opacity: design.opacity,
+        mixBlendMode: design.blendMode,
+        cursor: "move",
+        zIndex: isSelected ? 20 : 10,
+        userSelect: "none",
+        overflow: "visible",
+      }}
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        onSelect();
+        onPointerDownBody(e);
+      }}
+    >
+      {/* Image – carries the perspective transform in warp mode */}
+      <img
+        src={design.displaySrc}
+        alt=""
+        draggable={false}
+        style={{
+          width: "100%", height: "100%",
+          objectFit: "contain", display: "block", pointerEvents: "none",
+          transform: perspectiveTransform || "none",
+          transformOrigin: "0 0",
+        }}
+      />
+
+      {isSelected && !hasPerspective && (
+        <>
+          <div style={{ position: "absolute", inset: -1, border: "2px dashed #a78bfa", borderRadius: 2, pointerEvents: "none" }} />
+
+          {/* Rotation stem */}
+          <div style={{ position: "absolute", top: -20, left: "50%", transform: "translateX(-50%)", width: 1, height: 20, background: "#a78bfa", opacity: 0.6, pointerEvents: "none" }} />
+
+          {/* Rotation handle */}
+          <div
+            title="Rotate"
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onPointerDownRotate(e); }}
+            style={{
+              position: "absolute", top: -36, left: "50%",
+              transform: "translateX(-50%)",
+              width: 20, height: 20,
+              background: "linear-gradient(135deg,#7c3aed,#db2777)",
+              border: "2px solid white", borderRadius: "50%", cursor: "grab",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 30, boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 .49-4.21" />
+            </svg>
+          </div>
+
+          {/* Resize handles */}
+          {HANDLES.map((h) => (
+            <div
+              key={h.id}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onPointerDownHandle(e, h.id); }}
+              style={{
+                position: "absolute",
+                left: `calc(${h.x * 100}% - 5px)`,
+                top:  `calc(${h.y * 100}% - 5px)`,
+                width: 10, height: 10,
+                background: "white", border: "2px solid #7c3aed",
+                borderRadius: 2, cursor: h.cur, zIndex: 30,
+                boxShadow: "0 1px 4px rgba(0,0,0,0.4)",
+              }}
+            />
+          ))}
+        </>
+      )}
+
+      {isSelected && hasPerspective && hPos && (
+        <>
+          {/* Quadrilateral outline via SVG */}
+          <svg
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", zIndex: 15 }}
+          >
+            <polygon
+              points={hPos.map(p => `${p.x * 100},${p.y * 100}`).join(" ")}
+              fill="none" stroke="#a78bfa" strokeWidth="1.5" strokeDasharray="5 3"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+
+          {/* Corner drag handles */}
+          {hPos.map((hp, i) => (
+            <div
+              key={i}
+              title={["Top-Left", "Top-Right", "Bottom-Right", "Bottom-Left"][i]}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onPointerDownCorner(e, i); }}
+              style={{
+                position: "absolute",
+                left: `calc(${hp.x * 100}% - 8px)`,
+                top:  `calc(${hp.y * 100}% - 8px)`,
+                width: 16, height: 16,
+                background: CORNER_COLORS[i],
+                border: "2px solid white",
+                borderRadius: "50%",
+                cursor: "crosshair",
+                zIndex: 30,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <span style={{ fontSize: 7, color: "white", fontWeight: 700, lineHeight: 1 }}>
+                {["↖","↗","↘","↙"][i]}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Editor ───────────────────────────────────────────────────────────────────
+
+function EditorContent() {
+  const searchParams = useSearchParams();
+  const router       = useRouter();
+  const templateId   = searchParams.get("template");
+  const tpl          = (templateId && TEMPLATES[templateId]) || TEMPLATES["billboard-street"];
+
+  const [templateImg,   setTemplateImg]   = useState(null);
+  const [designs,       setDesigns]       = useState([]);
+  const [selectedId,    setSelectedId]    = useState(null);
+  const [isProcessing,  setIsProcessing]  = useState(false);
+  const [dtColor1,      setDtColor1]      = useState([139, 92, 246]);
+  const [dtColor2,      setDtColor2]      = useState([236, 72, 153]);
+  const [cDims,         setCDims]         = useState({ w: 1, h: 1 });
+
+  const containerRef  = useRef(null);
+  const fileInputRef  = useRef(null);
+  const dragRef       = useRef(null);
+  const origSrcRef    = useRef({});
+  const exportImgRef  = useRef({});
+
+  // ── Track container pixel dimensions ─────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0].contentRect;
+      setCDims({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [templateImg]); // re-attach once template is loaded and container exists
+
+  // ── Load template image ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!tpl) { router.push("/mockup-2d"); return; }
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => {
-      setBannerImage(img);
-      bannerImageRef.current = img;
-      drawComposite();
-    };
-    img.src = currentTemplate.image;
-  }, [currentTemplate?.image, router, drawComposite]);
+    img.onload = () => setTemplateImg(img);
+    img.src = tpl.image;
+  }, [tpl?.image]);
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    
-    files.forEach((file) => {
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!selectedId || e.target.tagName === "INPUT") return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        removeDesign(selectedId); return;
+      }
+      const step = e.shiftKey ? 0.01 : 0.002;
+      const map  = { ArrowLeft: [-step,0], ArrowRight: [step,0], ArrowUp: [0,-step], ArrowDown: [0,step] };
+      if (map[e.key]) {
+        e.preventDefault();
+        const [dx, dy] = map[e.key];
+        setDesigns(p => p.map(d => d.id !== selectedId ? d : {
+          ...d,
+          x: Math.max(-d.w + 0.05, Math.min(0.95, d.x + dx)),
+          y: Math.max(-d.h + 0.05, Math.min(0.95, d.y + dy)),
+        }));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId]);
+
+  // ── Global mouse-move / mouse-up ─────────────────────────────────────────
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragRef.current) return;
+      const { type, handleId, designId, startMouse, startDesign, cRect } = dragRef.current;
+      const dx = (e.clientX - startMouse.x) / cRect.width;
+      const dy = (e.clientY - startMouse.y) / cRect.height;
+      const MIN = 0.04;
+
+      setDesigns(prev => prev.map(d => {
+        if (d.id !== designId) return d;
+
+        // ── Move ──────────────────────────────────────────────────────────
+        if (type === "move") return {
+          ...d,
+          x: Math.max(-d.w + 0.05, Math.min(0.95, startDesign.x + dx)),
+          y: Math.max(-d.h + 0.05, Math.min(0.95, startDesign.y + dy)),
+        };
+
+        // ── Resize ────────────────────────────────────────────────────────
+        if (type === "resize") {
+          let { x, y, w, h } = startDesign;
+          const ar = w / h;
+          if      (handleId==="se"){ w=Math.max(MIN,startDesign.w+dx); h=w/ar; }
+          else if (handleId==="sw"){ w=Math.max(MIN,startDesign.w-dx); h=w/ar; x=startDesign.x+startDesign.w-w; }
+          else if (handleId==="ne"){ w=Math.max(MIN,startDesign.w+dx); h=w/ar; y=startDesign.y+startDesign.h-h; }
+          else if (handleId==="nw"){ w=Math.max(MIN,startDesign.w-dx); h=w/ar; x=startDesign.x+startDesign.w-w; y=startDesign.y+startDesign.h-h; }
+          else if (handleId==="e" ){ w=Math.max(MIN,startDesign.w+dx); h=w/ar; }
+          else if (handleId==="w" ){ w=Math.max(MIN,startDesign.w-dx); h=w/ar; x=startDesign.x+startDesign.w-w; }
+          else if (handleId==="s" ){ h=Math.max(0.02,startDesign.h+dy); w=h*ar; }
+          else if (handleId==="n" ){ h=Math.max(0.02,startDesign.h-dy); w=h*ar; y=startDesign.y+startDesign.h-h; }
+          return { ...d, x, y, w, h };
+        }
+
+        // ── Rotate ────────────────────────────────────────────────────────
+        if (type === "rotate") {
+          const cx = (startDesign.x + startDesign.w/2) * cRect.width  + cRect.left;
+          const cy = (startDesign.y + startDesign.h/2) * cRect.height + cRect.top;
+          return { ...d, rotation: Math.atan2(e.clientY-cy, e.clientX-cx) * 180/Math.PI + 90 };
+        }
+
+        // ── Corner warp ───────────────────────────────────────────────────
+        if (type === "corner") {
+          const idx = handleId; // 0-3
+          const sc  = dragRef.current.startCorners;
+          if (!sc) return d;
+          const newCorners = sc.map((c, i) =>
+            i === idx ? { dx: c.dx + dx, dy: c.dy + dy } : { ...c }
+          );
+          return { ...d, corners: newCorners };
+        }
+
+        return d;
+      }));
+    };
+
+    const onUp = () => { dragRef.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup",   onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup",   onUp);
+    };
+  }, []);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const cRect = () => containerRef.current?.getBoundingClientRect();
+
+  const startDrag = (e, type, designId, handleId = null) => {
+    const rect = cRect();
+    if (!rect) return;
+    const d = designs.find(x => x.id === designId);
+    if (!d) return;
+    dragRef.current = {
+      type, handleId, designId,
+      startMouse: { x: e.clientX, y: e.clientY },
+      startDesign: { ...d },
+      startCorners: d.corners ? d.corners.map(c => ({ ...c })) : null,
+      cRect: rect,
+    };
+  };
+
+  const removeDesign = (id) => {
+    setDesigns(p => p.filter(d => d.id !== id));
+    delete origSrcRef.current[id];
+    delete exportImgRef.current[id];
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const updateSelected = (upd) =>
+    setDesigns(p => p.map(d => d.id === selectedId ? { ...d, ...upd } : d));
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+  const handleUpload = (e) => {
+    Array.from(e.target.files || []).forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const dataUrl = reader.result;
         const img = new Image();
-        img.crossOrigin = "anonymous";
         img.onload = () => {
-          const designId = `design-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          
-          // Initialize position to center of billboard area
-          let initialPosition = { x: null, y: null };
-          if (bannerImageRef.current && currentTemplate) {
-            const canvasWidth = bannerImageRef.current.naturalWidth || bannerImageRef.current.width;
-            const canvasHeight = bannerImageRef.current.naturalHeight || bannerImageRef.current.height;
-            const billboardAreaWidth = canvasWidth * currentTemplate.areaWidth;
-            const billboardAreaHeight = canvasHeight * currentTemplate.areaHeight;
-            const billboardStartX = canvasWidth * currentTemplate.areaX;
-            const billboardStartY = canvasHeight * currentTemplate.areaY;
-            
-            initialPosition = {
-              x: billboardStartX + (billboardAreaWidth / 2),
-              y: billboardStartY + (billboardAreaHeight / 2)
-            };
-          }
-          
-          // Ensure image has dimensions (sometimes naturalWidth/Height aren't immediately available)
-          if (!img.naturalWidth || !img.naturalHeight) {
-            // Wait a bit for dimensions to be available
-            setTimeout(() => {
-              addDesign();
-            }, 50);
-          } else {
-            addDesign();
-          }
-          
-          function addDesign() {
-            // Store image reference BEFORE state update to ensure it's available when drawComposite runs
-            userDesignsRef.current[designId] = img;
-            // Store original image for filter reset functionality
-            originalImagesRef.current[designId] = img;
-            
-            // Add to designs array - useEffect will trigger drawComposite when userDesigns changes
-            setUserDesigns((prev) => [
-              ...prev,
-              {
-                id: designId,
-                src: dataUrl,
-                position: initialPosition,
-                scale: 0.3,
-                rotation: 0, // Rotation in degrees
-                perspectivePoints: [], // 4-point perspective points
-              },
-            ]);
-            
-            // Select the newly added design
-            setSelectedDesignId(designId);
-            
-            // Force a redraw after state update to ensure image appears immediately
-            requestAnimationFrame(() => {
-              setTimeout(() => {
-                if (bannerImageRef.current && canvasRef.current) {
-                  drawComposite();
-                }
-              }, 0);
-            });
-          }
-        };
-        img.onerror = (error) => {
-          console.error("Error loading image:", error);
+          const id = `d-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const { opacity, blendMode } = defaultBlend(tpl?.category);
+          const tAspect   = templateImg ? templateImg.naturalWidth / templateImg.naturalHeight : 1;
+          const imgAspect = img.naturalWidth / img.naturalHeight;
+          const w = tpl.areaWidth * 0.7;
+          const h = w * tAspect / imgAspect;
+          const x = tpl.areaX + (tpl.areaWidth  - w) / 2;
+          const y = tpl.areaY + (tpl.areaHeight - h) / 2;
+          origSrcRef.current[id]   = dataUrl;
+          exportImgRef.current[id] = img;
+          setDesigns(p => [...p, {
+            id, src: dataUrl, displaySrc: dataUrl,
+            x, y, w, h,
+            rotation: 0, skewX: 0, skewY: 0,
+            corners: null,
+            opacity, blendMode,
+          }]);
+          setSelectedId(id);
         };
         img.src = dataUrl;
       };
-      reader.onerror = (error) => {
-        console.error("Error reading file:", error);
-      };
       reader.readAsDataURL(file);
     });
-    
-    // Reset input
-    e.target.value = '';
+    e.target.value = "";
   };
 
-  useEffect(() => {
-    if (bannerImageRef.current) {
-      drawComposite();
-    }
-  }, [drawComposite, userDesigns]);
-
-  // Close color palette when selected design changes
-  useEffect(() => {
-    setShowColorPalette(false);
-  }, [selectedDesignId]);
-
-  // Handle window resize to recalculate preview scale
-  useEffect(() => {
-    const handleResize = () => {
-      if (bannerImageRef.current) {
-        drawComposite();
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [drawComposite]);
-
-  // Handle document-level mouse events for mapping area dragging
-  useEffect(() => {
-    if (!isDraggingInMapping) return;
-
-    const handleDocumentMouseMove = (e) => {
-      handleMouseMove(e);
-    };
-
-    const handleDocumentMouseUp = () => {
-      handleMouseUp();
-    };
-
-    document.addEventListener('mousemove', handleDocumentMouseMove);
-    document.addEventListener('mouseup', handleDocumentMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleDocumentMouseMove);
-      document.removeEventListener('mouseup', handleDocumentMouseUp);
-    };
-  }, [isDraggingInMapping, userDesigns, selectedDesignId]);
-
-  // Zoom functions
-  const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 0.25, 3.0)); // Max zoom 3x
-  };
-
-  const handleZoomOut = () => {
-    setZoom((prev) => Math.max(prev - 0.25, 0.25)); // Min zoom 0.25x
-  };
-
-  const handleZoomReset = () => {
-    setZoom(1.0);
-    setPanOffset({ x: 0, y: 0 }); // Reset pan when resetting zoom
-  };
-
-  const handleWheel = (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setZoom((prev) => Math.max(0.25, Math.min(3.0, prev + delta)));
-    }
-  };
-
-  const handleMouseDown = (e) => {
-    // Find which design was clicked (if any)
-    // When transform is on wrapper, canvas rect is still correct, but we need to account for transform
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scaleX = canvasRef.current.width / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    // Calculate coordinates relative to canvas (transform on wrapper doesn't affect canvas rect)
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    
-    let clickedDesignId = null;
-    
-    // Check each design to see if click is within bounds (only if designs exist)
-    if (userDesigns.length > 0) {
-      for (let i = userDesigns.length - 1; i >= 0; i--) {
-        const designData = userDesigns[i];
-        const design = userDesignsRef.current[designData.id];
-        if (!design) continue;
-        
-        const designAspect = design.width / design.height;
-        const billboardAreaWidth = canvasRef.current.width * currentTemplate.areaWidth;
-        const billboardAreaHeight = canvasRef.current.height * currentTemplate.areaHeight;
-        const designWidth = billboardAreaWidth * designData.scale;
-        const designHeight = designWidth / designAspect;
-        
-        let designX, designY;
-        if (designData.position.x !== null && designData.position.y !== null) {
-          designX = designData.position.x - (designWidth / 2);
-          designY = designData.position.y - (designHeight / 2);
-        } else {
-          const billboardStartX = canvasRef.current.width * currentTemplate.areaX;
-          const billboardStartY = canvasRef.current.height * currentTemplate.areaY;
-          designX = billboardStartX + (billboardAreaWidth / 2) - (designWidth / 2);
-          designY = billboardStartY + (billboardAreaHeight / 2) - (designHeight / 2);
-        }
-        
-        if (x >= designX && x <= designX + designWidth && y >= designY && y <= designY + designHeight) {
-          clickedDesignId = designData.id;
-          break;
-        }
-      }
-    }
-    
-    // Handle 4-point perspective mode - only when actively collecting points
-    if (is4PointMode && selectedDesignId) {
-      const currentPoints = userDesigns.find(d => d.id === selectedDesignId)?.perspectivePoints || [];
-      // Only add points if we're still collecting (less than 4 points) and clicked outside the design
-      if (currentPoints.length < 4 && !clickedDesignId) {
-        const newPoints = [...currentPoints, { x, y }];
-        setUserDesigns((prev) =>
-          prev.map((design) =>
-            design.id === selectedDesignId
-              ? { ...design, perspectivePoints: newPoints }
-              : design
-          )
-        );
-        
-        // If we've collected 4 points, exit 4-point mode and show mapping area
-        if (newPoints.length === 4) {
-          setIs4PointMode(false);
-          setShowMappingArea(true);
-        }
-        return;
-      }
-    }
-    
-    if (clickedDesignId) {
-      // Clicked on a design - always allow dragging (even with 4 points set)
-      setSelectedDesignId(clickedDesignId);
-      setIsDragging(true);
-      setDraggingDesignId(clickedDesignId);
-      setIsPanning(false); // Ensure panning is disabled when dragging design
-      
-      // Store initial drag state (position and mouse coordinates)
-      const design = userDesigns.find(d => d.id === clickedDesignId);
-      if (design) {
-        dragInitialRef.current = {
-          position: design.position.x !== null && design.position.y !== null 
-            ? { x: design.position.x, y: design.position.y }
-            : { x, y },
-          mouseX: x,
-          mouseY: y
-        };
-      }
-    } else if (zoom > 1.0) {
-      // Clicked on empty area and zoomed in - enable panning
-      setIsPanning(true);
-      panInitialRef.current = {
-        mouse: { x: e.clientX, y: e.clientY },
-        offset: { ...panOffset }
-      };
-      setSelectedDesignId(null);
-    } else {
-      // Clicked on empty area and not zoomed - just deselect
-      setSelectedDesignId(null);
-    }
-  };
-
-  const handleMouseMove = (e) => {
-    if (isPanning) {
-      // Pan the canvas - calculate new offset based on mouse movement from initial click
-      const deltaX = e.clientX - panInitialRef.current.mouse.x;
-      const deltaY = e.clientY - panInitialRef.current.mouse.y;
-      setPanOffset({
-        x: panInitialRef.current.offset.x + deltaX,
-        y: panInitialRef.current.offset.y + deltaY
-      });
-      return;
-    }
-    
-    // Handle dragging in mapping area
-    if (isDraggingInMapping && selectedDesignId && mappingAreaRef.current) {
-      const selectedDesign = userDesigns.find(d => d.id === selectedDesignId);
-      if (!selectedDesign || !selectedDesign.perspectivePoints || selectedDesign.perspectivePoints.length !== 4) return;
-      
-      const points = selectedDesign.perspectivePoints;
-      const minX = Math.min(points[0].x, points[1].x, points[2].x, points[3].x);
-      const maxX = Math.max(points[0].x, points[1].x, points[2].x, points[3].x);
-      const minY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y);
-      const maxY = Math.max(points[0].y, points[1].y, points[2].y, points[3].y);
-      
-      const mappingWidth = maxX - minX;
-      const mappingHeight = maxY - minY;
-      
-      const rect = mappingAreaRef.current.getBoundingClientRect();
-      const displayWidth = rect.width;
-      const displayHeight = rect.height;
-      
-      // Calculate position relative to mapping area
-      const relX = e.clientX - rect.left;
-      const relY = e.clientY - rect.top;
-      
-      // Map to canvas coordinates (0 to displayWidth -> minX to maxX)
-      const canvasX = (relX / displayWidth) * mappingWidth + minX;
-      const canvasY = (relY / displayHeight) * mappingHeight + minY;
-      
-      // Clamp to mapping area bounds
-      const newX = Math.max(minX, Math.min(maxX, canvasX));
-      const newY = Math.max(minY, Math.min(maxY, canvasY));
-      
-      setUserDesigns((prev) =>
-        prev.map((design) =>
-          design.id === selectedDesignId
-            ? { ...design, position: { x: newX, y: newY } }
-            : design
-        )
-      );
-      return;
-    }
-    
-    if (!isDragging || !draggingDesignId || !currentTemplate) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    // Calculate coordinates relative to canvas (transform on wrapper doesn't affect canvas rect)
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    
-    // Calculate delta from initial drag position
-    const deltaX = x - dragInitialRef.current.mouseX;
-    const deltaY = y - dragInitialRef.current.mouseY;
-    
-    // Base new position before constraints
-    const baseX = dragInitialRef.current.position.x + deltaX;
-    const baseY = dragInitialRef.current.position.y + deltaY;
-
-    // Store latest position and throttle updates with requestAnimationFrame
-    dragUpdateRef.current.pending = { x: baseX, y: baseY };
-
-    if (dragUpdateRef.current.rafId == null) {
-      dragUpdateRef.current.rafId = requestAnimationFrame(() => {
-        const pending = dragUpdateRef.current.pending;
-        dragUpdateRef.current.rafId = null;
-        if (!pending || !canvasRef.current) return;
-
-        const canvasNow = canvasRef.current;
-        let newX = pending.x;
-        let newY = pending.y;
-
-        setUserDesigns((prev) =>
-          prev.map((design) => {
-            if (design.id !== draggingDesignId) return design;
-
-            // If 4 points are set, constrain movement within that area
-            if (design.perspectivePoints && design.perspectivePoints.length === 4) {
-              const img = userDesignsRef.current[design.id];
-              if (img) {
-                const designAspect = img.width / img.height;
-                const billboardAreaWidth = canvasNow.width * currentTemplate.areaWidth;
-                const billboardAreaHeight = canvasNow.height * currentTemplate.areaHeight;
-                const designWidth = billboardAreaWidth * design.scale;
-                const designHeight = designWidth / designAspect;
-
-                const bounds = getConstrainedBounds(design.perspectivePoints, designWidth, designHeight);
-
-                newX = Math.max(bounds.minX, Math.min(bounds.maxX, newX));
-                newY = Math.max(bounds.minY, Math.min(bounds.maxY, newY));
-              }
-            } else {
-              const canvasWidth = canvasNow.width;
-              const canvasHeight = canvasNow.height;
-              newX = Math.max(0, Math.min(canvasWidth, newX));
-              newY = Math.max(0, Math.min(canvasHeight, newY));
-            }
-
-            return { ...design, position: { x: newX, y: newY } };
-          })
-        );
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setDraggingDesignId(null);
-    setIsPanning(false);
-    setIsDraggingInMapping(false);
-    // Clear any pending drag animation frame
-    if (dragUpdateRef.current.rafId != null) {
-      cancelAnimationFrame(dragUpdateRef.current.rafId);
-      dragUpdateRef.current.rafId = null;
-    }
-    dragUpdateRef.current.pending = null;
-  };
-
-  const handleExport = () => {
-    if (!bannerImageRef.current || !currentTemplate || userDesigns.length === 0) return;
-    
-    const banner = bannerImageRef.current;
-    const exportCanvas = document.createElement("canvas");
-    const ctx = exportCanvas.getContext("2d");
-    
-    // Use actual image dimensions for export
-    const actualWidth = banner.naturalWidth || banner.width;
-    const actualHeight = banner.naturalHeight || banner.height;
-    exportCanvas.width = actualWidth;
-    exportCanvas.height = actualHeight;
-    
-    ctx.drawImage(banner, 0, 0, exportCanvas.width, exportCanvas.height);
-    
-    // Draw all user designs
-    const previewCanvas = canvasRef.current;
-    const scaleX = exportCanvas.width / previewCanvas.width;
-    const scaleY = exportCanvas.height / previewCanvas.height;
-    
-    userDesigns.forEach((designData) => {
-      const design = userDesignsRef.current[designData.id];
-      if (!design) return;
-      
-      const designAspect = design.width / design.height;
-      const billboardAreaWidth = exportCanvas.width * currentTemplate.areaWidth;
-      const billboardAreaHeight = exportCanvas.height * currentTemplate.areaHeight;
-      
-      const designWidth = billboardAreaWidth * designData.scale;
-      const designHeight = designWidth / designAspect;
-      
-      // Allow designs to grow freely based on scale
-      let finalWidth = designWidth;
-      let finalHeight = designHeight;
-      
-      let designX, designY;
-      if (designData.position.x !== null && designData.position.y !== null) {
-        // Use absolute coordinates scaled to export canvas size
-        designX = (designData.position.x * scaleX) - (finalWidth / 2);
-        designY = (designData.position.y * scaleY) - (finalHeight / 2);
-      } else {
-        // Default to center of billboard area
-        const billboardStartX = exportCanvas.width * currentTemplate.areaX;
-        const billboardStartY = exportCanvas.height * currentTemplate.areaY;
-        designX = billboardStartX + (billboardAreaWidth / 2) - (finalWidth / 2);
-        designY = billboardStartY + (billboardAreaHeight / 2) - (finalHeight / 2);
-      }
-      
-      ctx.save();
-      // Apply reduced opacity to all categories for more natural look
-      ctx.globalAlpha = 0.95;
-      
-      // Special handling for cup category
-      if (currentTemplate.category === "cup") {
-        // Use softer shadow for cups
-        ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-        // Use multiply blend mode for better integration with cup surface
-        ctx.globalCompositeOperation = 'multiply';
-      } else if (currentTemplate.category !== "banner") {
-        // Standard drop shadow for other categories
-        ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
-        ctx.shadowBlur = 20;
-        ctx.shadowOffsetX = 4;
-        ctx.shadowOffsetY = 4;
-        ctx.globalCompositeOperation = 'source-over';
-      } else {
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      
-      // Check if 4-point perspective is set
-      if (designData.perspectivePoints && designData.perspectivePoints.length === 4) {
-        // Scale perspective points to export canvas size
-        const scaledPoints = designData.perspectivePoints.map(point => ({
-          x: point.x * scaleX,
-          y: point.y * scaleY
-        }));
-        // Use 4-point perspective transformation
-        applyPerspectiveTransform(
-          ctx,
-          designX,
-          designY,
-          finalWidth,
-          finalHeight,
-          scaledPoints
-        );
-        // Apply cup warp if cup category
-        if (currentTemplate.category === "cup") {
-          applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
-        } else {
-          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
-        }
-      } else {
-        // Use standard transformation
-        const centerX = designX + finalWidth / 2;
-        const centerY = designY + finalHeight / 2;
-        
-        // Move to center for transformations
-        ctx.translate(centerX, centerY);
-        
-        // Apply user rotation (starts at 0, only rotates when slider is adjusted)
-        const userRotation = designData.rotation !== undefined ? designData.rotation : 0;
-        if (userRotation !== 0) {
-          ctx.rotate((userRotation * Math.PI) / 180);
-        }
-        
-        // Move back to draw at correct position
-        ctx.translate(-centerX, -centerY);
-        
-        // Apply cup warp if cup category
-        if (currentTemplate.category === "cup") {
-          applyCupWarp(ctx, design, designX, designY, finalWidth, finalHeight);
-        } else {
-          ctx.drawImage(design, designX, designY, finalWidth, finalHeight);
-        }
-      }
-      ctx.restore();
+  // ── Effects ───────────────────────────────────────────────────────────────
+  const applyEffect = (fn) => {
+    const orig = origSrcRef.current[selectedId];
+    if (!orig || isProcessing) return;
+    setIsProcessing(true);
+    fn(orig, (newSrc) => {
+      const img = new Image();
+      img.onload = () => { exportImgRef.current[selectedId] = img; };
+      img.src = newSrc;
+      updateSelected({ displaySrc: newSrc });
+      setIsProcessing(false);
     });
-    
-    exportCanvas.toBlob((blob) => {
+  };
+
+  const resetEffect = () => {
+    const orig = origSrcRef.current[selectedId];
+    if (!orig) return;
+    const img = new Image();
+    img.onload = () => { exportImgRef.current[selectedId] = img; };
+    img.src = orig;
+    updateSelected({ displaySrc: orig });
+  };
+
+  // ── Export ────────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    if (!templateImg || designs.length === 0) return;
+    const nW = templateImg.naturalWidth, nH = templateImg.naturalHeight;
+    const cvs = document.createElement("canvas");
+    cvs.width = nW; cvs.height = nH;
+    const ctx = cvs.getContext("2d");
+    ctx.drawImage(templateImg, 0, 0, nW, nH);
+
+    designs.forEach(d => {
+      const img = exportImgRef.current[d.id];
+      if (!img) return;
+      const x = d.x*nW, y = d.y*nH, w = d.w*nW, h = d.h*nH;
+      const bm = BLEND_MODES.find(b => b.id === d.blendMode)?.canvas ?? "source-over";
+
+      if (d.corners) {
+        // Perspective warp export (scanline)
+        const c = d.corners;
+        const dst = [
+          { x: x + c[0].dx*nW,     y: y + c[0].dy*nH     }, // TL
+          { x: x+w + c[1].dx*nW,   y: y + c[1].dy*nH     }, // TR
+          { x: x+w + c[2].dx*nW,   y: y+h + c[2].dy*nH   }, // BR
+          { x: x + c[3].dx*nW,     y: y+h + c[3].dy*nH   }, // BL
+        ];
+        // Shadow pass
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 30; ctx.shadowOffsetY = 6;
+        _drawPerspectiveWarp(ctx, img, dst, 0.18, "source-over");
+        ctx.restore();
+        // Main pass
+        _drawPerspectiveWarp(ctx, img, dst, d.opacity, bm);
+      } else {
+        const cx = x+w/2, cy = y+h/2;
+        const skewXRad = (d.skewX || 0) * Math.PI / 180;
+        const skewYRad = (d.skewY || 0) * Math.PI / 180;
+        // Shadow
+        ctx.save();
+        ctx.globalAlpha = 0.18; ctx.globalCompositeOperation = "source-over";
+        ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 8;
+        ctx.translate(cx, cy); ctx.rotate(d.rotation * Math.PI/180);
+        if (d.skewX || d.skewY) ctx.transform(1, Math.tan(skewYRad), Math.tan(skewXRad), 1, 0, 0);
+        ctx.drawImage(img, -w/2, -h/2, w, h);
+        ctx.restore();
+        // Main
+        ctx.save();
+        ctx.globalAlpha = d.opacity; ctx.globalCompositeOperation = bm;
+        ctx.translate(cx, cy); ctx.rotate(d.rotation * Math.PI/180);
+        if (d.skewX || d.skewY) ctx.transform(1, Math.tan(skewYRad), Math.tan(skewXRad), 1, 0, 0);
+        ctx.drawImage(img, -w/2, -h/2, w, h);
+        ctx.restore();
+      }
+    });
+
+    cvs.toBlob(blob => {
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "mockup-result.png";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const a = document.createElement("a");
+      a.href = url; a.download = "mockup.png";
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     });
   };
 
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const sel = designs.find(d => d.id === selectedId);
+  const containerAspect = templateImg
+    ? `${templateImg.naturalWidth} / ${templateImg.naturalHeight}`
+    : "16 / 9";
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle={currentTemplate?.name || "2D Mockup Editor"} backLink="/mockup-2d" backText="← Back to Templates" />
+      <Navbar subtitle={tpl?.name || "2D Editor"} backLink="/mockup-2d" backText="← Templates" />
 
-      <section className="flex-1 py-8 sm:py-12">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-8 sm:mb-12 space-y-4">
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight">
-              <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400 bg-clip-text text-transparent">
-                2D Mockup Editor
-              </span>
-            </h1>
-            <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto">
-              {currentTemplate?.name || "Create professional 2D product mockups"}
-            </p>
-          </div>
+      <div className="flex-1 flex overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-slate-100">Preview</h2>
-                  {bannerImage && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleZoomOut}
-                        className="p-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
-                        title="Zoom Out"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                        </svg>
-                      </button>
-                      <span className="text-sm text-slate-400 min-w-[60px] text-center">
-                        {Math.round(zoom * 100)}%
-                      </span>
-                      <button
-                        onClick={handleZoomIn}
-                        className="p-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
-                        title="Zoom In"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={handleZoomReset}
-                        className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors text-xs"
-                        title="Reset Zoom"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  )}
-                </div>
-                
-                {bannerImage ? (
-                  <div className="space-y-4">
-                    <div 
-                      ref={containerRef}
-                      className="relative rounded-xl overflow-auto border border-slate-800 bg-slate-900 w-full"
-                      style={{ maxHeight: '80vh', minHeight: '400px' }}
-                    >
-                      <div
-                        style={{
-                          transform: zoom > 1.0 ? `translate(${panOffset.x}px, ${panOffset.y}px)` : 'none',
-                          display: 'inline-block',
-                          willChange: 'transform'
-                        }}
-                      >
-                        <canvas
-                          ref={canvasRef}
-                          onMouseDown={handleMouseDown}
-                          onMouseMove={handleMouseMove}
-                          onMouseUp={handleMouseUp}
-                          onMouseLeave={handleMouseUp}
-                          onWheel={handleWheel}
-                          style={{ 
-                            display: 'block', 
-                            imageRendering: 'auto',
-                            cursor: is4PointMode ? 'crosshair' : (isPanning ? 'grabbing' : (isDragging ? 'grabbing' : (zoom > 1.0 ? 'grab' : (userDesigns.length > 0 ? 'grab' : 'default'))))
-                          }}
-                        />
-                      </div>
-                      {userDesigns.length === 0 && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-                          <p className="text-slate-400">Upload your design to place it on the mockup</p>
-                        </div>
-                      )}
-                      
-                    </div>
-                    {(userDesigns.length > 0 || zoom > 1.0) && (
-                      <p className="text-xs text-slate-500 text-center">
-                        {userDesigns.length > 0 && '💡 Click and drag designs to reposition them • '}
-                        {zoom > 1.0 && 'Click and drag to pan • '}
-                        Ctrl/Cmd + Scroll to zoom
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="relative rounded-xl overflow-auto border border-slate-800 bg-slate-900 flex justify-center items-center p-4">
-                    <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-slate-400">Loading template...</p>
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* ── Canvas area ─────────────────────────────────────────────────── */}
+        <div
+          className="flex-1 flex items-center justify-center p-6 overflow-hidden"
+          style={{ background: "radial-gradient(circle at center, rgba(139,92,246,0.07) 0%, transparent 70%)" }}
+        >
+          {templateImg ? (
+            <div
+              ref={containerRef}
+              className="relative shadow-2xl shadow-black/60 rounded-sm overflow-visible"
+              style={{
+                aspectRatio: containerAspect,
+                maxWidth: `min(100%, calc((100vh - 110px) * ${templateImg.naturalWidth / templateImg.naturalHeight}))`,
+                width: "100%",
+              }}
+              onMouseDown={(e) => { if (e.target === containerRef.current) setSelectedId(null); }}
+            >
+              <img
+                src={tpl.image}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none rounded-sm select-none"
+              />
 
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6">
-                <h2 className="text-lg font-semibold text-slate-100 mb-4">Upload Your Logo/Design</h2>
-                
-                <div>
-                  <div className="border-2 border-dashed border-slate-700 rounded-xl p-6 text-center hover:border-purple-500/50 transition-colors">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleImageUpload}
-                      id="image-upload"
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="image-upload"
-                      className="cursor-pointer flex flex-col items-center space-y-2"
-                    >
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl">
-                        📤
-                      </div>
-                      <div>
-                        <p className="text-slate-300 font-medium text-sm mb-1">Add Images</p>
-                        <p className="text-xs text-slate-500">PNG, JPG, or SVG</p>
-                      </div>
-                    </label>
-                  </div>
-                  
-                  {/* List of uploaded designs */}
-                  {userDesigns.length > 0 && (
-                    <div className="space-y-3 max-h-64 overflow-y-auto mt-4">
-                      {userDesigns.map((designData) => (
-                        <div
-                          key={designData.id}
-                          className={`relative rounded-xl overflow-hidden border p-3 bg-slate-900 transition-all ${
-                            selectedDesignId === designData.id
-                              ? 'border-purple-500 ring-2 ring-purple-500/50'
-                              : 'border-slate-800'
-                          }`}
-                          onClick={() => setSelectedDesignId(designData.id)}
-                        >
-                          <img
-                            src={designData.src}
-                            alt={`Design ${designData.id}`}
-                            className="w-full h-auto max-h-20 object-contain mx-auto"
-                          />
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Remove design
-                              setUserDesigns((prev) => {
-                                const filtered = prev.filter((d) => d.id !== designData.id);
-                                // Update selected design if needed
-                                if (selectedDesignId === designData.id) {
-                                  setSelectedDesignId(filtered.length > 0 ? filtered[0].id : null);
-                                }
-                                return filtered;
-                              });
-                              delete userDesignsRef.current[designData.id];
-                              delete originalImagesRef.current[designData.id];
-                              setTimeout(() => drawComposite(), 100);
-                            }}
-                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-900/90 hover:bg-red-600/80 text-slate-300 hover:text-white transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {selectedDesignId && userDesigns.find((d) => d.id === selectedDesignId) && (
-                <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6">
-                  <h2 className="text-lg font-semibold text-slate-100 mb-4">Design Controls</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm text-slate-400 mb-2">
-                        Size: {Math.round((userDesigns.find((d) => d.id === selectedDesignId)?.scale || 0.3) * 100)}%
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserDesigns((prev) => {
-                              const minScale = 0.01;
-                              const step = 0.05;
-                              return prev.map((design) => {
-                                if (design.id !== selectedDesignId) return design;
-                                const current = design.scale ?? 0.3;
-                                let updated = current - step;
-                                if (updated < minScale) updated = minScale;
-                                return { ...design, scale: updated };
-                              });
-                            });
-                          }}
-                          className="px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white text-sm transition-colors"
-                        >
-                          -
-                        </button>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            min={1}
-                            step={5}
-                            value={Math.round((userDesigns.find((d) => d.id === selectedDesignId)?.scale || 0.3) * 100)}
-                            onChange={(e) => {
-                              const raw = parseFloat(e.target.value);
-                              if (Number.isNaN(raw)) return;
-                              const minPercent = 1;
-                              const safe = Math.max(minPercent, raw);
-                              const newScale = safe / 100;
-                              setUserDesigns((prev) =>
-                                prev.map((design) =>
-                                  design.id === selectedDesignId ? { ...design, scale: newScale } : design
-                                )
-                              );
-                            }}
-                            className="w-16 px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                          />
-                          <span className="text-xs text-slate-400">%</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUserDesigns((prev) => {
-                              const minScale = 0.01;
-                              const step = 0.05;
-                              return prev.map((design) => {
-                                if (design.id !== selectedDesignId) return design;
-                                const current = design.scale ?? 0.3;
-                                let updated = current + step;
-                                if (updated < minScale) updated = minScale;
-                                return { ...design, scale: updated };
-                              });
-                            });
-                          }}
-                          className="px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-slate-200 hover:text-white text-sm transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <div className="flex justify-between text-xs text-slate-500 mt-1">
-                        <span>Small</span>
-                        <span>{currentTemplate.category === "card" ? "Very Large" : "Large"}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-slate-400 mb-2">
-                        Rotation: {Math.round(userDesigns.find((d) => d.id === selectedDesignId)?.rotation || 0)}°
-                      </label>
-                      <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        step="1"
-                        value={userDesigns.find((d) => d.id === selectedDesignId)?.rotation || 0}
-                        onChange={(e) => {
-                          const newRotation = parseFloat(e.target.value);
-                          setUserDesigns((prev) =>
-                            prev.map((design) =>
-                              design.id === selectedDesignId ? { ...design, rotation: newRotation } : design
-                            )
-                          );
-                        }}
-                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                      />
-                      <div className="flex justify-between text-xs text-slate-500 mt-1">
-                        <span>-180°</span>
-                        <span>0°</span>
-                        <span>180°</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-slate-400 mb-2">Image Effects</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => {
-                            const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
-                            if (!selectedDesign) return;
-                            
-                            // Always use the original image for filtering
-                            const originalImg = originalImagesRef.current[selectedDesignId];
-                            if (!originalImg) return;
-                            
-                            setIsProcessing(true);
-                            applyGrayscaleFilter(originalImg, (filteredImg) => {
-                              userDesignsRef.current[selectedDesignId] = filteredImg;
-                              setIsProcessing(false);
-                              drawComposite();
-                            });
-                          }}
-                          disabled={isProcessing}
-                          className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          Grayscale
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowColorPalette(!showColorPalette);
-                          }}
-                          disabled={isProcessing}
-                          className={`px-3 py-2 rounded-lg border text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                            showColorPalette
-                              ? 'border-purple-500 bg-purple-500/20 text-purple-300'
-                              : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white'
-                          }`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                          </svg>
-                          Color Filter
-                        </button>
-                      </div>
-                      
-                      {/* Color Palette UI */}
-                      {showColorPalette && (
-                        <div className="mt-4 p-4 rounded-lg border border-slate-700 bg-slate-900/80 space-y-4">
-                          <div>
-                            <label className="block text-xs text-slate-400 mb-2">Quick Select Popular Colors</label>
-                            <div className="grid grid-cols-5 gap-2">
-                              {popularColors.map((colorOption, index) => (
-                                <button
-                                  key={index}
-                                  onClick={() => {
-                                    // Set dark and light colors for duotone effect
-                                    setDuotoneColor1(colorOption.dark);
-                                    setDuotoneColor2(colorOption.light);
-                                  }}
-                                  className="aspect-square rounded-lg border-2 border-slate-700 hover:border-purple-500 transition-colors relative group"
-                                  style={{
-                                    background: `linear-gradient(135deg, rgb(${colorOption.dark[0]}, ${colorOption.dark[1]}, ${colorOption.dark[2]}) 0%, rgb(${colorOption.light[0]}, ${colorOption.light[1]}, ${colorOption.light[2]}) 100%)`
-                                  }}
-                                  title={colorOption.name}
-                                >
-                                  <span className="absolute inset-0 flex items-center justify-center text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity font-medium drop-shadow-lg">
-                                    {colorOption.name}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-xs text-slate-400 mb-2">Dark Color (Shadows)</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={`#${duotoneColor1[0].toString(16).padStart(2, '0')}${duotoneColor1[1].toString(16).padStart(2, '0')}${duotoneColor1[2].toString(16).padStart(2, '0')}`}
-                                  onChange={(e) => {
-                                    const hex = e.target.value;
-                                    const r = parseInt(hex.slice(1, 3), 16);
-                                    const g = parseInt(hex.slice(3, 5), 16);
-                                    const b = parseInt(hex.slice(5, 7), 16);
-                                    setDuotoneColor1([r, g, b]);
-                                  }}
-                                  className="w-12 h-10 rounded border border-slate-700 cursor-pointer"
-                                />
-                                <div className="flex-1 text-xs text-slate-500">
-                                  RGB({duotoneColor1[0]}, {duotoneColor1[1]}, {duotoneColor1[2]})
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-xs text-slate-400 mb-2">Light Color (Highlights)</label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={`#${duotoneColor2[0].toString(16).padStart(2, '0')}${duotoneColor2[1].toString(16).padStart(2, '0')}${duotoneColor2[2].toString(16).padStart(2, '0')}`}
-                                  onChange={(e) => {
-                                    const hex = e.target.value;
-                                    const r = parseInt(hex.slice(1, 3), 16);
-                                    const g = parseInt(hex.slice(3, 5), 16);
-                                    const b = parseInt(hex.slice(5, 7), 16);
-                                    setDuotoneColor2([r, g, b]);
-                                  }}
-                                  className="w-12 h-10 rounded border border-slate-700 cursor-pointer"
-                                />
-                                <div className="flex-1 text-xs text-slate-500">
-                                  RGB({duotoneColor2[0]}, {duotoneColor2[1]}, {duotoneColor2[2]})
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <button
-                            onClick={() => {
-                              const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
-                              if (!selectedDesign) return;
-                              
-                              const originalImg = originalImagesRef.current[selectedDesignId];
-                              if (!originalImg) return;
-                              
-                              setIsProcessing(true);
-                              applyDuotoneFilter(originalImg, duotoneColor1, duotoneColor2, (filteredImg) => {
-                                userDesignsRef.current[selectedDesignId] = filteredImg;
-                                setIsProcessing(false);
-                                drawComposite();
-                                setShowColorPalette(false);
-                              });
-                            }}
-                            disabled={isProcessing}
-                            className="w-full px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {isProcessing ? 'Applying...' : 'Apply Color Filter'}
-                          </button>
-                        </div>
-                      )}
-                      
-                      <button
-                        onClick={() => {
-                          const selectedDesign = userDesigns.find((d) => d.id === selectedDesignId);
-                          if (!selectedDesign) return;
-                          
-                          // Reset to original image
-                          const originalImg = originalImagesRef.current[selectedDesignId];
-                          if (originalImg) {
-                            userDesignsRef.current[selectedDesignId] = originalImg;
-                            drawComposite();
-                            setShowColorPalette(false);
-                          }
-                        }}
-                        className="w-full mt-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Reset to Original
-                      </button>
-                      <p className="text-xs text-slate-500 mt-2 text-center">
-                        Apply image effects to your design
-                      </p>
-                    </div>
-                    {(currentTemplate.category === "card" || currentTemplate.category === "banner") && (
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-2">4-Point Perspective</label>
-                        <div className="space-y-2">
-                          <button
-                            onClick={() => {
-                              if (is4PointMode) {
-                                // Cancel 4-point mode and clear points
-                                setIs4PointMode(false);
-                                setUserDesigns((prev) =>
-                                  prev.map((design) =>
-                                    design.id === selectedDesignId
-                                      ? { ...design, perspectivePoints: [] }
-                                      : design
-                                  )
-                                );
-                              } else {
-                                // Enable 4-point mode and clear existing points
-                                setIs4PointMode(true);
-                                setUserDesigns((prev) =>
-                                  prev.map((design) =>
-                                    design.id === selectedDesignId
-                                      ? { ...design, perspectivePoints: [] }
-                                      : design
-                                  )
-                                );
-                              }
-                            }}
-                            className={`w-full px-4 py-2 rounded-lg border transition-colors ${
-                              is4PointMode
-                                ? 'border-purple-500 bg-purple-500/20 text-purple-300'
-                                : 'border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white'
-                            }`}
-                          >
-                            {is4PointMode ? 'Cancel 4-Point Mode' : 'Enable 4-Point Mode'}
-                          </button>
-                          {is4PointMode && (
-                            <p className="text-xs text-slate-500 text-center">
-                              Click on canvas to set 4 corner points ({userDesigns.find((d) => d.id === selectedDesignId)?.perspectivePoints?.length || 0}/4)
-                            </p>
-                          )}
-                          {userDesigns.find((d) => d.id === selectedDesignId)?.perspectivePoints?.length === 4 && (
-                            <button
-                              onClick={() => {
-                                setUserDesigns((prev) =>
-                                  prev.map((design) =>
-                                    design.id === selectedDesignId
-                                      ? { ...design, perspectivePoints: [] }
-                                      : design
-                                  )
-                                );
-                                setShowMappingArea(false);
-                              }}
-                              className="w-full px-4 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm"
-                            >
-                              Clear Points
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Mapping Panel - shown when 4 points are set */}
-                    {selectedDesignId && userDesigns.find((d) => d.id === selectedDesignId)?.perspectivePoints?.length === 4 && (
-                      <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6">
-                        <h2 className="text-lg font-semibold text-slate-100 mb-4">Mapping Area</h2>
-                        <p className="text-xs text-slate-400 mb-4">Drag the image within this area to position it on the preview</p>
-                        {(() => {
-                          const selectedDesign = userDesigns.find(d => d.id === selectedDesignId);
-                          if (!selectedDesign || !selectedDesign.perspectivePoints || selectedDesign.perspectivePoints.length !== 4) return null;
-                          
-                          const points = selectedDesign.perspectivePoints;
-                          const minX = Math.min(points[0].x, points[1].x, points[2].x, points[3].x);
-                          const maxX = Math.max(points[0].x, points[1].x, points[2].x, points[3].x);
-                          const minY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y);
-                          const maxY = Math.max(points[0].y, points[1].y, points[2].y, points[3].y);
-                          
-                          const mappingWidth = maxX - minX;
-                          const mappingHeight = maxY - minY;
-                          const mappingAspect = mappingWidth / mappingHeight;
-                          
-                          // Display size for mapping panel (fixed height, maintain aspect)
-                          const displayHeight = 200;
-                          const displayWidth = displayHeight * mappingAspect;
-                          
-                          // Calculate relative position within mapping area
-                          const currentPos = selectedDesign.position || { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-                          const relX = ((currentPos.x - minX) / mappingWidth) * displayWidth;
-                          const relY = ((currentPos.y - minY) / mappingHeight) * displayHeight;
-                          
-                          const img = userDesignsRef.current[selectedDesign.id];
-                          if (!img) return null;
-                          
-                          const imgAspect = img.width / img.height;
-                          const imgDisplaySize = 40; // Size of image in mapping area
-                          const imgDisplayWidth = imgAspect > 1 ? imgDisplaySize : imgDisplaySize * imgAspect;
-                          const imgDisplayHeight = imgAspect > 1 ? imgDisplaySize / imgAspect : imgDisplaySize;
-                          
-                          return (
-                            <div className="relative">
-                              <div
-                                ref={mappingAreaRef}
-                                className="relative border-2 border-purple-500 bg-slate-800/50 rounded-lg overflow-hidden"
-                                style={{
-                                  width: `${displayWidth}px`,
-                                  height: `${displayHeight}px`,
-                                  margin: '0 auto'
-                                }}
-                                onMouseDown={(e) => {
-                                  if (!mappingAreaRef.current) return;
-                                  const rect = mappingAreaRef.current.getBoundingClientRect();
-                                  const x = ((e.clientX - rect.left) / displayWidth) * mappingWidth + minX;
-                                  const y = ((e.clientY - rect.top) / displayHeight) * mappingHeight + minY;
-                                  
-                                  setIsDraggingInMapping(true);
-                                  dragInitialRef.current = {
-                                    position: { x, y },
-                                    mouseX: e.clientX,
-                                    mouseY: e.clientY
-                                  };
-                                }}
-                              >
-                                {/* Background grid pattern */}
-                                <div className="absolute inset-0 opacity-20" style={{
-                                  backgroundImage: 'linear-gradient(rgba(139, 92, 246, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(139, 92, 246, 0.3) 1px, transparent 1px)',
-                                  backgroundSize: '20px 20px'
-                                }} />
-                                
-                                {/* Image representation in mapping area */}
-                                <div
-                                  className="absolute cursor-move border-2 border-purple-400 bg-purple-500/20 rounded"
-                                  style={{
-                                    left: `${Math.max(0, Math.min(displayWidth - imgDisplayWidth, relX - imgDisplayWidth / 2))}px`,
-                                    top: `${Math.max(0, Math.min(displayHeight - imgDisplayHeight, relY - imgDisplayHeight / 2))}px`,
-                                    width: `${imgDisplayWidth}px`,
-                                    height: `${imgDisplayHeight}px`,
-                                    backgroundImage: `url(${selectedDesign.src})`,
-                                    backgroundSize: 'cover',
-                                    backgroundPosition: 'center'
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-sm text-slate-400 mb-2">Position</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          onClick={() => {
-                            if (bannerImageRef.current && currentTemplate) {
-                              const canvasWidth = bannerImageRef.current.naturalWidth || bannerImageRef.current.width;
-                              const canvasHeight = bannerImageRef.current.naturalHeight || bannerImageRef.current.height;
-                              const billboardAreaWidth = canvasWidth * currentTemplate.areaWidth;
-                              const billboardAreaHeight = canvasHeight * currentTemplate.areaHeight;
-                              const billboardStartX = canvasWidth * currentTemplate.areaX;
-                              const billboardStartY = canvasHeight * currentTemplate.areaY;
-                              setUserDesigns((prev) =>
-                                prev.map((design) =>
-                                  design.id === selectedDesignId
-                                    ? {
-                                        ...design,
-                                        position: {
-                                          x: billboardStartX + (billboardAreaWidth / 2),
-                                          y: billboardStartY + (billboardAreaHeight / 2),
-                                        },
-                                      }
-                                    : design
-                                )
-                              );
-                            }
-                          }}
-                          className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors"
-                        >
-                          Center
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (bannerImageRef.current && currentTemplate) {
-                              const canvasWidth = bannerImageRef.current.naturalWidth || bannerImageRef.current.width;
-                              const canvasHeight = bannerImageRef.current.naturalHeight || bannerImageRef.current.height;
-                              const billboardAreaWidth = canvasWidth * currentTemplate.areaWidth;
-                              const billboardAreaHeight = canvasHeight * currentTemplate.areaHeight;
-                              const billboardStartX = canvasWidth * currentTemplate.areaX;
-                              const billboardStartY = canvasHeight * currentTemplate.areaY;
-                              setUserDesigns((prev) =>
-                                prev.map((design) =>
-                                  design.id === selectedDesignId
-                                    ? {
-                                        ...design,
-                                        position: {
-                                          x: billboardStartX + (billboardAreaWidth / 2),
-                                          y: billboardStartY + (billboardAreaHeight * 0.3),
-                                        },
-                                      }
-                                    : design
-                                )
-                              );
-                            }
-                          }}
-                          className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:bg-slate-800 text-slate-300 hover:text-white text-sm transition-colors"
-                        >
-                          Top
-                        </button>
-                      </div>
-                    </div>
+              {designs.map(d => (
+                <DesignElement
+                  key={d.id}
+                  design={d}
+                  isSelected={d.id === selectedId}
+                  cDims={cDims}
+                  onSelect={() => setSelectedId(d.id)}
+                  onPointerDownBody={(e) => startDrag(e, "move", d.id)}
+                  onPointerDownHandle={(e, hId) => startDrag(e, "resize", d.id, hId)}
+                  onPointerDownRotate={(e) => startDrag(e, "rotate", d.id)}
+                  onPointerDownCorner={(e, i) => startDrag(e, "corner", d.id, i)}
+                />
+              ))}
+
+              {designs.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-slate-950/65 backdrop-blur-sm rounded-xl px-6 py-4 border border-slate-700/40 text-center">
+                    <p className="text-slate-200 text-sm font-semibold">Upload a design to get started</p>
+                    <p className="text-slate-500 text-xs mt-1">Drag handles to resize · Rotate with the purple handle</p>
                   </div>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 text-slate-400">
+              <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm">Loading template…</p>
+            </div>
+          )}
+        </div>
 
-              <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6">
-                <h2 className="text-lg font-semibold text-slate-100 mb-4">Export</h2>
-                <div className="space-y-3">
-                  <button
-                    onClick={handleExport}
-                    disabled={userDesigns.length === 0 || !bannerImage}
-                    className="w-full px-4 py-3 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold shadow-lg shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+        {/* ── Controls panel ──────────────────────────────────────────────── */}
+        <aside className="w-72 shrink-0 flex flex-col border-l border-slate-800/60 bg-slate-900/50 overflow-y-auto">
+          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
+
+          {/* Upload */}
+          <div className="p-4 border-b border-slate-800/50">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-500/15 to-pink-500/10 border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200 text-sm font-semibold transition-all"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Image
+            </button>
+          </div>
+
+          {/* Layers */}
+          {designs.length > 0 && (
+            <div className="p-3 border-b border-slate-800/50">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">Layers</p>
+              <div className="space-y-1">
+                {[...designs].reverse().map((d, i) => (
+                  <div
+                    key={d.id}
+                    onClick={() => setSelectedId(d.id)}
+                    className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition-all group ${
+                      selectedId === d.id
+                        ? "bg-purple-500/15 border border-purple-500/40"
+                        : "hover:bg-slate-800/50 border border-transparent"
+                    }`}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Export Image (PNG)
-                  </button>
-                  <p className="text-xs text-slate-500 text-center">
-                    Downloads high-resolution image
-                  </p>
-                </div>
+                    <div className="w-8 h-8 rounded-md overflow-hidden bg-slate-800 border border-slate-700 shrink-0">
+                      <img src={d.src} alt="" className="w-full h-full object-contain" />
+                    </div>
+                    <span className={`text-xs flex-1 truncate font-medium ${selectedId === d.id ? "text-purple-200" : "text-slate-300"}`}>
+                      Layer {designs.length - i}
+                    </span>
+                    {d.corners && (
+                      <span className="text-[9px] text-pink-400 font-semibold border border-pink-500/30 rounded px-1">WARP</span>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeDesign(d.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
+
+          {/* Transform controls */}
+          {sel ? (
+            <div className="p-4 space-y-4 flex-1">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Transform</p>
+
+              {/* Size */}
+              <div>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-xs text-slate-400">Size</span>
+                  <span className="text-xs font-mono text-purple-400">{Math.round(sel.w * 100)}%</span>
+                </div>
+                <input
+                  type="range" min="5" max="150" step="1"
+                  value={Math.round(sel.w * 100)}
+                  onChange={(e) => {
+                    const w = parseInt(e.target.value) / 100;
+                    updateSelected({ w, h: w * (sel.h / sel.w) });
+                  }}
+                  className="w-full h-1.5 appearance-none bg-slate-800 rounded-full cursor-pointer accent-purple-500"
+                />
+              </div>
+
+              {/* ── Warp mode toggle ──────────────────────────────────────── */}
+              <div>
+                <p className="text-xs text-slate-400 mb-2">Perspective Warp</p>
+                <button
+                  onClick={() => {
+                    if (sel.corners) {
+                      // disable warp
+                      updateSelected({ corners: null });
+                    } else {
+                      // enable warp — all corners at zero offset
+                      updateSelected({
+                        corners: [
+                          { dx: 0, dy: 0 },
+                          { dx: 0, dy: 0 },
+                          { dx: 0, dy: 0 },
+                          { dx: 0, dy: 0 },
+                        ],
+                        rotation: 0, skewX: 0, skewY: 0,
+                      });
+                    }
+                  }}
+                  className={`w-full py-2 rounded-lg border text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                    sel.corners
+                      ? "border-pink-500/60 bg-pink-500/15 text-pink-300 hover:bg-pink-500/25"
+                      : "border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:border-purple-400"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="2 20 8 4 16 16 20 8 22 20" />
+                  </svg>
+                  {sel.corners ? "Disable Perspective Warp" : "Enable Perspective Warp"}
+                </button>
+
+                {sel.corners && (
+                  <div className="mt-2 space-y-1.5">
+                    <p className="text-[10px] text-slate-500">Drag the colored corner handles on the canvas to warp.</p>
+                    {/* Corner offset readouts + reset per corner */}
+                    {sel.corners.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span
+                          className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-[8px] text-white font-bold"
+                          style={{ background: CORNER_COLORS[i] }}
+                        >
+                          {["↖","↗","↘","↙"][i]}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400 flex-1">
+                          {(c.dx * 100).toFixed(1)}%, {(c.dy * 100).toFixed(1)}%
+                        </span>
+                        <button
+                          onClick={() => {
+                            const nc = sel.corners.map((cc, j) => j === i ? { dx: 0, dy: 0 } : { ...cc });
+                            updateSelected({ corners: nc });
+                          }}
+                          className="text-[10px] text-slate-600 hover:text-slate-300 transition-colors"
+                          title="Reset this corner"
+                        >
+                          ↺
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => updateSelected({ corners: [{ dx:0,dy:0 },{ dx:0,dy:0 },{ dx:0,dy:0 },{ dx:0,dy:0 }] })}
+                      className="w-full py-1 rounded border border-slate-700 text-[10px] text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-all"
+                    >
+                      Reset All Corners
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Normal transform controls (hidden in warp mode) ────────── */}
+              {!sel.corners && (
+                <>
+                  {/* Rotation */}
+                  <div>
+                    <div className="flex justify-between mb-1.5">
+                      <span className="text-xs text-slate-400">Rotation</span>
+                      <input
+                        type="number" min="-180" max="180" step="1"
+                        value={Math.round(sel.rotation)}
+                        onChange={(e) => updateSelected({ rotation: parseFloat(e.target.value) || 0 })}
+                        className="w-14 text-right text-xs font-mono text-purple-400 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <input
+                      type="range" min="-180" max="180" step="1"
+                      value={sel.rotation}
+                      onChange={(e) => updateSelected({ rotation: parseFloat(e.target.value) })}
+                      className="w-full h-1.5 appearance-none bg-slate-800 rounded-full cursor-pointer accent-purple-500"
+                    />
+                  </div>
+
+                  {/* Skew X */}
+                  <div>
+                    <div className="flex justify-between mb-1.5">
+                      <span className="text-xs text-slate-400">Skew X</span>
+                      <input
+                        type="number" min="-45" max="45" step="0.5"
+                        value={parseFloat((sel.skewX || 0).toFixed(1))}
+                        onChange={(e) => updateSelected({ skewX: parseFloat(e.target.value) || 0 })}
+                        className="w-14 text-right text-xs font-mono text-purple-400 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <input
+                      type="range" min="-45" max="45" step="0.5"
+                      value={sel.skewX || 0}
+                      onChange={(e) => updateSelected({ skewX: parseFloat(e.target.value) })}
+                      className="w-full h-1.5 appearance-none bg-slate-800 rounded-full cursor-pointer accent-purple-500"
+                    />
+                  </div>
+
+                  {/* Skew Y */}
+                  <div>
+                    <div className="flex justify-between mb-1.5">
+                      <span className="text-xs text-slate-400">Skew Y</span>
+                      <input
+                        type="number" min="-45" max="45" step="0.5"
+                        value={parseFloat((sel.skewY || 0).toFixed(1))}
+                        onChange={(e) => updateSelected({ skewY: parseFloat(e.target.value) || 0 })}
+                        className="w-14 text-right text-xs font-mono text-purple-400 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                    <input
+                      type="range" min="-45" max="45" step="0.5"
+                      value={sel.skewY || 0}
+                      onChange={(e) => updateSelected({ skewY: parseFloat(e.target.value) })}
+                      className="w-full h-1.5 appearance-none bg-slate-800 rounded-full cursor-pointer accent-purple-500"
+                    />
+                  </div>
+
+                  {/* Quick position */}
+                  <div>
+                    <p className="text-xs text-slate-400 mb-2">Quick Position</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        onClick={() => updateSelected({
+                          x: tpl.areaX + (tpl.areaWidth  - sel.w) / 2,
+                          y: tpl.areaY + (tpl.areaHeight - sel.h) / 2,
+                        })}
+                        className="py-1.5 rounded-lg border border-slate-700 text-[10px] text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-all"
+                      >
+                        Center in Area
+                      </button>
+                      <button
+                        onClick={() => updateSelected({ rotation: 0, skewX: 0, skewY: 0 })}
+                        className="py-1.5 rounded-lg border border-slate-700 text-[10px] text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-all"
+                      >
+                        Reset Rotation
+                      </button>
+                      {tpl?.perspective && (
+                        <button
+                          onClick={() => updateSelected({
+                            rotation: tpl.perspective.rotation,
+                            skewX: tpl.perspective.skewX * 45,
+                            skewY: tpl.perspective.skewY * 45,
+                          })}
+                          className="col-span-2 py-1.5 rounded-lg border border-purple-500/40 text-[10px] text-purple-400 hover:text-purple-200 hover:border-purple-400 hover:bg-purple-500/10 transition-all"
+                        >
+                          Match Background Angle
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Opacity */}
+              <div>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-xs text-slate-400">Opacity</span>
+                  <span className="text-xs font-mono text-purple-400">{Math.round(sel.opacity * 100)}%</span>
+                </div>
+                <input
+                  type="range" min="10" max="100" step="1"
+                  value={Math.round(sel.opacity * 100)}
+                  onChange={(e) => updateSelected({ opacity: parseInt(e.target.value) / 100 })}
+                  className="w-full h-1.5 appearance-none bg-slate-800 rounded-full cursor-pointer accent-purple-500"
+                />
+              </div>
+
+              {/* Blend mode */}
+              <div>
+                <p className="text-xs text-slate-400 mb-2">Blend Mode</p>
+                <div className="grid grid-cols-4 gap-1">
+                  {BLEND_MODES.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      onClick={() => updateSelected({ blendMode: id })}
+                      className={`py-1.5 rounded-lg border text-[10px] font-semibold transition-all ${
+                        sel.blendMode === id
+                          ? "border-purple-500 bg-purple-500/20 text-purple-300"
+                          : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1">
+                  {sel.blendMode === "multiply" && "Multiply — looks printed on surface"}
+                  {sel.blendMode === "screen"   && "Screen — bright / glowing blend"}
+                  {sel.blendMode === "overlay"  && "Overlay — high contrast blend"}
+                  {sel.blendMode === "normal"   && "Normal — placed on top"}
+                </p>
+              </div>
+
+              {/* Effects */}
+              <div>
+                <p className="text-xs text-slate-400 mb-2">Image Effects</p>
+                <div className="grid grid-cols-3 gap-1.5 mb-2">
+                  <button
+                    disabled={isProcessing}
+                    onClick={() => applyEffect((src, cb) => filterGrayscale(src, cb))}
+                    className="py-1.5 rounded-lg border border-slate-700 text-[10px] text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-40 transition-all"
+                  >
+                    B&W
+                  </button>
+                  <button
+                    disabled={isProcessing}
+                    onClick={() => applyEffect((src, cb) => filterDuotone(src, dtColor1, dtColor2, cb))}
+                    className="py-1.5 rounded-lg border border-slate-700 text-[10px] text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-40 transition-all"
+                  >
+                    Duotone
+                  </button>
+                  <button
+                    onClick={resetEffect}
+                    className="py-1.5 rounded-lg border border-slate-700 text-[10px] text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-all"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {[[dtColor1, setDtColor1], [dtColor2, setDtColor2]].map(([col, setCol], i) => (
+                    <input
+                      key={i}
+                      type="color"
+                      title={i === 0 ? "Dark color" : "Light color"}
+                      value={`#${col.map(v => v.toString(16).padStart(2,"0")).join("")}`}
+                      onChange={(e) => {
+                        const h = e.target.value;
+                        setCol([parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]);
+                      }}
+                      className="w-7 h-7 rounded border border-slate-700 cursor-pointer"
+                    />
+                  ))}
+                  <span className="text-[10px] text-slate-500">Duotone colors</span>
+                </div>
+              </div>
+
+              {/* Delete */}
+              <button
+                onClick={() => removeDesign(selectedId)}
+                className="w-full py-2 rounded-lg border border-red-500/30 text-red-400/80 hover:bg-red-500/10 hover:text-red-300 text-xs transition-all"
+              >
+                Delete Layer
+              </button>
+
+              <p className="text-[10px] text-slate-600 text-center">
+                {sel.corners
+                  ? "Drag colored handles to set perspective · Scroll panel for corners"
+                  : "Arrow keys to nudge · Shift+Arrow for larger steps · Delete to remove"}
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center px-4">
+              {designs.length > 0
+                ? <p className="text-xs text-slate-500 text-center">Click a design on the canvas or select a layer above</p>
+                : <p className="text-xs text-slate-600 text-center">Add an image to start</p>
+              }
+            </div>
+          )}
+
+          {/* Export */}
+          <div className="p-4 border-t border-slate-800/50 mt-auto">
+            <button
+              onClick={handleExport}
+              disabled={designs.length === 0 || !templateImg}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-sm shadow-lg shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export PNG
+            </button>
+            <p className="text-[10px] text-slate-600 text-center mt-2">Full-resolution export</p>
           </div>
-        </div>
-      </section>
+        </aside>
+      </div>
     </main>
   );
 }
@@ -1630,15 +1038,11 @@ function Mockup2DEditorContent() {
 export default function Mockup2DEditorPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-        <Navbar subtitle="2D Mockup Editor" backLink="/mockup-2d" backText="← Back to Templates" />
-        <section className="flex-1 py-8 sm:py-12 flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-        </section>
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
       </main>
     }>
-      <Mockup2DEditorContent />
+      <EditorContent />
     </Suspense>
   );
 }
-

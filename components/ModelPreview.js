@@ -3,71 +3,38 @@
 import { Suspense, useMemo } from "react";
 import * as THREE from "three";
 import { Canvas, useLoader } from "@react-three/fiber";
-import { PerspectiveCamera, OrbitControls, useGLTF } from "@react-three/drei";
+import { PerspectiveCamera, OrbitControls, useGLTF, Bounds } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 
-// Helper function to calculate the visual center (bounding box center) of the object
-// This calculates the center in local space for accurate geometric centering
-function calculateVisualCenter(object) {
-  const box = new THREE.Box3();
-  let hasVisibleMeshes = false;
-  
-  // Calculate bounding box from geometry in local space (relative to object)
-  // This ensures we get the true geometric center before any transforms
-  object.traverse((child) => {
-    if (child.isMesh && child.visible && child.geometry) {
-      const geometry = child.geometry;
-      
-      // Compute bounding box for this geometry if not already computed
-      if (!geometry.boundingBox) {
-        geometry.computeBoundingBox();
-      }
-      
-      if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
-        const geometryBox = geometry.boundingBox.clone();
-        
-        // Get the child's local transform (position, rotation, scale relative to parent)
-        const localMatrix = new THREE.Matrix4();
-        localMatrix.compose(
-          child.position,
-          child.quaternion,
-          child.scale
-        );
-        
-        // Transform the geometry bounding box by the child's local transform
-        geometryBox.applyMatrix4(localMatrix);
-        
-        if (!hasVisibleMeshes) {
-          box.copy(geometryBox);
-          hasVisibleMeshes = true;
-        } else {
-          // Expand box to include this geometry's bounding box
-          box.expandByPoint(geometryBox.min);
-          box.expandByPoint(geometryBox.max);
-        }
-      }
-    }
-  });
-  
-  // Return the center of the bounding box in local space
-  if (hasVisibleMeshes && !box.isEmpty()) {
-    return box.getCenter(new THREE.Vector3());
-  }
-  
-  // Fallback: use setFromObject (this works in local space when object is at origin)
-  const fallbackBox = new THREE.Box3();
-  object.traverse((child) => {
-    if (child.isMesh && child.visible) {
-      fallbackBox.expandByObject(child);
-    }
-  });
-  
-  if (!fallbackBox.isEmpty()) {
-    return fallbackBox.getCenter(new THREE.Vector3());
-  }
-  
-  // Last fallback: return origin
-  return new THREE.Vector3(0, 0, 0);
+// Centers and scales an Object3D so its bounding box is at the world origin
+// and its largest dimension equals targetSize.
+// Uses updateWorldMatrix so nested hierarchies (GLB, FBX) are handled correctly.
+function centerAndScale(object, targetSize = 1.6) {
+  // Force world matrices to be computed even without a scene
+  object.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+
+  // Step 1: shift so bounding-box center sits at world origin
+  const center = box.getCenter(new THREE.Vector3());
+  object.position.sub(center);
+
+  // Step 2: scale so the longest axis equals targetSize
+  object.updateWorldMatrix(true, true);
+  const box2 = new THREE.Box3().setFromObject(object);
+  const size = box2.getSize(new THREE.Vector3());
+  const maxSize = Math.max(size.x, size.y, size.z) || 1;
+  object.scale.setScalar(targetSize / maxSize);
+
+  // Step 3: re-center after scale (scaling around the pivot shifts the center)
+  object.updateWorldMatrix(true, true);
+  const box3 = new THREE.Box3().setFromObject(object);
+  const finalCenter = box3.getCenter(new THREE.Vector3());
+  object.position.x -= finalCenter.x;
+  object.position.y -= finalCenter.y;
+  object.position.z -= finalCenter.z;
 }
 
 function CenteredOBJ({ file }) {
@@ -75,46 +42,7 @@ function CenteredOBJ({ file }) {
 
   const centered = useMemo(() => {
     const cloned = obj.clone();
-    
-    // Calculate visual center (bounding box center) for accurate centering
-    const visualCenter = calculateVisualCenter(cloned);
-    
-    // Center the model at origin BEFORE scaling
-    cloned.position.x = -visualCenter.x;
-    cloned.position.y = -visualCenter.y;
-    cloned.position.z = -visualCenter.z;
-    
-    // Calculate bounding box size for scaling (after initial centering)
-    const box = new THREE.Box3();
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible) {
-        box.expandByObject(child);
-      }
-    });
-    
-    const size = box.getSize(new THREE.Vector3());
-    const maxSize = Math.max(size.x, size.y, size.z) || 1;
-    
-    // Scale to fit inside small preview
-    const scale = 1.6 / maxSize;
-    cloned.scale.setScalar(scale);
-    
-    // Recalculate center after scaling to ensure model is truly centered at origin
-    // This accounts for any numerical precision issues
-    const finalBox = new THREE.Box3();
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible) {
-        finalBox.expandByObject(child);
-      }
-    });
-    
-    const finalCenter = finalBox.getCenter(new THREE.Vector3());
-    
-    // Adjust position to ensure model is centered at origin (0, 0, 0)
-    cloned.position.x -= finalCenter.x;
-    cloned.position.y -= finalCenter.y;
-    cloned.position.z -= finalCenter.z;
-    
+    centerAndScale(cloned);
     return cloned;
   }, [obj]);
 
@@ -126,50 +54,40 @@ function CenteredGLB({ file }) {
 
   const centered = useMemo(() => {
     const cloned = scene.clone();
-    
-    // Calculate visual center (bounding box center) for accurate centering
-    const visualCenter = calculateVisualCenter(cloned);
-    
-    // Center the model at origin BEFORE scaling
-    cloned.position.x = -visualCenter.x;
-    cloned.position.y = -visualCenter.y;
-    cloned.position.z = -visualCenter.z;
-    
-    // Calculate bounding box size for scaling (after initial centering)
-    const box = new THREE.Box3();
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible) {
-        box.expandByObject(child);
-      }
-    });
-    
-    const size = box.getSize(new THREE.Vector3());
-    const maxSize = Math.max(size.x, size.y, size.z) || 1;
-    
-    // Scale to fit inside small preview
-    const scale = 1.6 / maxSize;
-    cloned.scale.setScalar(scale);
-    
-    // Recalculate center after scaling to ensure model is truly centered at origin
-    // This accounts for any numerical precision issues
-    const finalBox = new THREE.Box3();
-    cloned.traverse((child) => {
-      if (child.isMesh && child.visible) {
-        finalBox.expandByObject(child);
-      }
-    });
-    
-    const finalCenter = finalBox.getCenter(new THREE.Vector3());
-    
-    // Adjust position to ensure model is centered at origin (0, 0, 0)
-    cloned.position.x -= finalCenter.x;
-    cloned.position.y -= finalCenter.y;
-    cloned.position.z -= finalCenter.z;
-    
+    centerAndScale(cloned);
     return cloned;
   }, [scene]);
 
   return <primitive object={centered} />;
+}
+
+function CenteredFBX({ file }) {
+  const fbx = useLoader(FBXLoader, file);
+
+  const centered = useMemo(() => {
+    const cloned = fbx.clone();
+    centerAndScale(cloned);
+    return cloned;
+  }, [fbx]);
+
+  return <primitive object={centered} />;
+}
+
+function CenteredSTL({ file }) {
+  const geometry = useLoader(STLLoader, file);
+
+  const stlGroup = useMemo(() => {
+    const geo = geometry.clone();
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: "#cccccc", roughness: 0.4, metalness: 0.1 });
+    const mesh = new THREE.Mesh(geo, mat);
+    const group = new THREE.Group();
+    group.add(mesh);
+    centerAndScale(group);
+    return group;
+  }, [geometry]);
+
+  return <primitive object={stlGroup} />;
 }
 
 function PreviewScene({ model }) {
@@ -182,15 +100,18 @@ function PreviewScene({ model }) {
       <ambientLight intensity={0.7} />
       <directionalLight position={[3, 4, 5]} intensity={0.9} />
       <directionalLight position={[-4, -2, -3]} intensity={0.3} />
-      {type === "obj" && <CenteredOBJ file={file} />}
-      {(type === "glb" || type === "gltf") && <CenteredGLB file={file} />}
-      {!type && <CenteredOBJ file={file} />}
-      <OrbitControls 
-        enablePan={false} 
-        enableZoom={false} 
-        autoRotate 
+      <Bounds fit clip observe margin={1.2}>
+        {type === "obj" && <CenteredOBJ file={file} />}
+        {(type === "glb" || type === "gltf") && <CenteredGLB file={file} />}
+        {type === "fbx" && <CenteredFBX file={file} />}
+        {type === "stl" && <CenteredSTL file={file} />}
+        {!type && <CenteredOBJ file={file} />}
+      </Bounds>
+      <OrbitControls
+        enablePan={false}
+        enableZoom={false}
+        autoRotate
         autoRotateSpeed={1.2}
-        target={[0, 0, 0]} // Explicitly target the origin to ensure model stays centered
       />
     </>
   );
