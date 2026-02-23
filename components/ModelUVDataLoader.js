@@ -9,6 +9,33 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
 import { generateProceduralUV, extractUVData } from "./useUVData";
 import { getModelsByCategory, getModelById, getDefaultModelPath } from "@/app/studio/modelMapping";
 
+// Normalize UV coords to [0,1] so uvData matches what the 3D preview renders
+function normalizeUVs(object) {
+  let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+  object.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const uv = child.geometry.getAttribute("uv");
+    if (!uv) return;
+    for (let i = 0; i < uv.count; i++) {
+      const u = uv.getX(i), v = uv.getY(i);
+      if (u < minU) minU = u; if (u > maxU) maxU = u;
+      if (v < minV) minV = v; if (v > maxV) maxV = v;
+    }
+  });
+  if (!isFinite(minU)) return;
+  if (minU >= 0 && maxU <= 1 && minV >= 0 && maxV <= 1) return;
+  const uR = maxU - minU || 1, vR = maxV - minV || 1;
+  object.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const uv = child.geometry.getAttribute("uv");
+    if (!uv) return;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, (uv.getX(i) - minU) / uR, (uv.getY(i) - minV) / vR);
+    }
+    uv.needsUpdate = true;
+  });
+}
+
 export default function ModelUVDataLoader({ selectedModel, selectedVariation, children }) {
   const [uvData, setUvData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +71,7 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
               loader.load(modelPath, resolve, undefined, reject);
             });
             const cloned = obj.clone();
+            normalizeUVs(cloned);
             const data = extractUVData(cloned);
             setUvData(data);
           } else {
@@ -60,6 +88,7 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
             loader.load(modelInfo.file, resolve, undefined, reject);
           });
           const cloned = obj.clone();
+          normalizeUVs(cloned);
           const data = extractUVData(cloned);
           setUvData(data);
         } else if (modelInfo.type === "glb" || modelInfo.type === "gltf") {
@@ -68,6 +97,7 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
             loader.load(modelInfo.file, resolve, undefined, reject);
           });
           const cloned = gltf.scene.clone();
+          normalizeUVs(cloned);
           const data = extractUVData(cloned);
           setUvData(data);
         } else if (modelInfo.type === "fbx") {
@@ -76,6 +106,7 @@ export default function ModelUVDataLoader({ selectedModel, selectedVariation, ch
             loader.load(modelInfo.file, resolve, undefined, reject);
           });
           const cloned = fbx.clone();
+          normalizeUVs(cloned);
           const data = extractUVData(cloned);
           setUvData(data);
         } else if (modelInfo.type === "stl") {

@@ -67,6 +67,18 @@ export const TEMPLATE_LIST = [
     image: "/2d-mockup/cups/take-away-plastic-coffee-cup.jpg",
     category: "cup",
   },
+    {
+    id: "shirt-plain",
+    name: "Plain Shirt",
+    image: "/2d-mockup/shirt/shirt1.jpg",
+    category: "shirt",
+  },
+    {
+    id: "shirt-white",
+    name: "White Shirt",
+    image: "/2d-mockup/shirt/vecteezy_realistic-white-t-shirt-mock-up_21356698.jpg",
+    category: "shirt",
+  },
   // Add more templates here - just one simple object per template!
 ];
 

@@ -50,23 +50,6 @@ export const MODEL_FILES = {
 
   cup: [
 
-    { 
-
-      id: "cup-1", 
-
-      displayName: "Tea Mug", 
-
-      description: "Classic tea mug with handle",
-
-      file: `${BASE_MODEL_PATH}/Cups/cup.obj`,
-
-      type: "obj",
-
-      icon: "☕",
-      // Optional preview image (add when available)
-      preview: `${BASE_MODEL_PATH}/Cups/cup.png`
-
-    },
 
     { 
 
@@ -141,13 +124,13 @@ export const MODEL_FILES = {
     // T-shirt model file not found - uncomment when file is added
 
     { 
-      id: "shirt-1", 
-      displayName: "Ringer T-Shirte", 
-      description: "Ringer T-Shirte model",
-      file: `${BASE_MODEL_PATH}/Apparel/Shirt1.obj`,
+      id: "cap-1", 
+      displayName: "Ringer Cap", 
+      description: "Ringer Cap model",
+      file: `${BASE_MODEL_PATH}/Apparel/cap.obj`,
       type: "obj",
       icon: "🍼",
-      preview: `${BASE_MODEL_PATH}/Apparel/Shirt1.png`
+      preview: `${BASE_MODEL_PATH}/Apparel/rangerCap.jpg`
     },
     { 
 
@@ -194,8 +177,8 @@ export const MODEL_FILES = {
     },
     { 
       id: "bottle-2", 
-      displayName: "Water Bottle2", 
-      description: "Water bottle model",
+      displayName: "Wine Bottle", 
+      description: "Wine bottle model",
       file: `${BASE_MODEL_PATH}/Bottles/BOTTLE2.obj`,
       type: "obj",
       icon: "🍼",
@@ -203,13 +186,23 @@ export const MODEL_FILES = {
     },
     { 
       id: "bottle-3", 
-      displayName: "Water Bottle3", 
-      description: "Water bottle model",
+      displayName: "Sauce Bottle", 
+      description: "sauce bottle model",
       file: `${BASE_MODEL_PATH}/Bottles/BOTTLE3.obj`,
       type: "obj",
       icon: "🍼",
       preview: `${BASE_MODEL_PATH}/Bottles/BOTTLE3.jpg`
     },
+    { 
+      id: "can-1", 
+      displayName: "Can", 
+      description: "Metal can model",
+      file: `${BASE_MODEL_PATH}/Bottles/sodacan.obj`,
+      type: "obj",
+      icon: "🍼",
+      preview: `${BASE_MODEL_PATH}/Bottles/sodacan.jpg`
+    },
+
     // {
     //   id: "bottle-1",
     //   displayName: "Water Bottle",

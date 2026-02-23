@@ -11,7 +11,8 @@ const CATEGORIES = [
   { id: "banner", name: "Banner",  icon: "🎯" },
   { id: "card",   name: "Card",    icon: "💳" },
   { id: "cup",    name: "Cup",     icon: "☕" },
-  { id: "bag",    name: "Bag",     icon: "🎒" },
+  { id: "bag", name: "Bag", icon: "🎒" },
+  { id: "shirt",    name: "Shirt",     icon: "👕" },
 ];
 
 function Mockup2DContent() {
