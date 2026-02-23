@@ -63,6 +63,7 @@ export default function LandingPage() {
           <div className="absolute -right-48 bottom-0 h-96 w-[28rem] bg-gradient-to-tr from-purple-500/40 via-sky-400/30 to-cyan-300/40 rounded-full mix-blend-screen animate-[spin_24s_linear_infinite_reverse]" />
         </div>
 
+
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
           {/* Header */}
           <div className="text-center mb-12 sm:mb-16 space-y-4 sm:space-y-6">
