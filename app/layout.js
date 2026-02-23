@@ -4,6 +4,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import ToastContainer from "@/components/ToastContainer";
 import ErrorFilter from "@/components/ErrorFilter";
+import Navbar from "@/components/Navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({ children }) {
         <ErrorFilter />
         <AuthProvider>
           <ToastProvider>
+            <Navbar />
             {children}
             <ToastContainer />
           </ToastProvider>

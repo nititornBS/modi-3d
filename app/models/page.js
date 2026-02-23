@@ -3,7 +3,6 @@
 import { useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import { getAllModelFiles, getCategoryInfo } from "../studio/modelMapping";
 
 const CATEGORIES = [
@@ -78,11 +77,6 @@ function ModelsPageContent() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar 
-        subtitle="3D Mockup"
-        backLink="/"
-        backText="← Back to Home"
-      />
 
       {/* Main Content */}
       <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">

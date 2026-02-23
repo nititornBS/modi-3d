@@ -3,7 +3,6 @@
 import { useState, useMemo, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import { TEMPLATE_CATEGORIES, TEMPLATE_LIST } from "./templates";
 
 const CATEGORIES = [
@@ -38,7 +37,6 @@ function Mockup2DContent() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle="2D Mockup" backLink="/" backText="← Back to Home" />
 
       <section className="flex-1 bg-[radial-gradient(circle_at_top,_rgba(168,85,247,0.12),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(168,85,247,0.08),_transparent_55%)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import { TEMPLATES } from "../templates";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -608,7 +607,6 @@ function EditorContent() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle={tpl?.name || "2D Editor"} backLink="/mockup-2d" backText="← Templates" />
 
       <div className="flex-1 flex overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
 

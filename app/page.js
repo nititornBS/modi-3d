@@ -3,246 +3,141 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/AuthContext";
+
+const tools = [
+  {
+    id: "3d-mockup",
+    title: "3D Mockup",
+    description: "Place your designs on shirts, cups, bottles, and boxes with a real-time 3D viewer.",
+    href: "/models",
+    icon: "/cube.png",
+    accent: "sky",
+    features: ["3D viewer", "Multiple models", "Real-time preview"],
+  },
+  {
+    id: "2d-mockup",
+    title: "2D Mockup",
+    description: "Generate clean, professional 2D product presentations from your designs.",
+    href: "/mockup-2d",
+    icon: "/mockup.png",
+    accent: "violet",
+    features: ["Quick generation", "Multiple templates", "Export ready"],
+  },
+  {
+    id: "remove-background",
+    title: "Remove Background",
+    description: "Strip backgrounds from images with precision using brush tools and manual refinement.",
+    href: "/remove-background",
+    icon: "/remove.png",
+    accent: "emerald",
+    features: ["Brush tools", "Manual refinement", "PNG export"],
+  },
+];
+
+const accentMap = {
+  sky:     { card: "hover:border-sky-500/40 hover:shadow-sky-500/10",     badge: "bg-sky-500/10 text-sky-400 border-sky-500/20",     icon: "from-sky-500 to-cyan-400 shadow-sky-500/25",    arrow: "text-sky-400 group-hover:text-sky-300" },
+  violet:  { card: "hover:border-violet-500/40 hover:shadow-violet-500/10", badge: "bg-violet-500/10 text-violet-400 border-violet-500/20", icon: "from-violet-500 to-purple-400 shadow-violet-500/25", arrow: "text-violet-400 group-hover:text-violet-300" },
+  emerald: { card: "hover:border-emerald-500/40 hover:shadow-emerald-500/10", badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: "from-emerald-500 to-teal-400 shadow-emerald-500/25", arrow: "text-emerald-400 group-hover:text-emerald-300" },
+};
 
 export default function LandingPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  const tools = [
-    {
-      id: "3d-mockup",
-      title: "3D Mockup",
-      description: "Create stunning 3D product mockups with your designs on shirts, cups, bottles, and boxes.",
-      href: "/models",
-      icon: "/cube.png",
-      gradient: "from-sky-500 via-cyan-400 to-emerald-400",
-      features: ["3D viewer", "Multiple models", "Real-time preview"],
-    },
-    {
-      id: "2d-mockup",
-      title: "2D Mockup",
-      description: "Generate professional 2D product mockups and presentations for your designs.",
-      href: "/mockup-2d",
-      icon: "/mockup.png",
-      gradient: "from-purple-500 via-pink-400 to-rose-400",
-      features: ["Quick generation", "Multiple templates", "Export ready"],
-    },
-    {
-      id: "remove-background",
-      title: "Remove Background",
-      description: "Remove backgrounds from your images with precision. Use brush tools to refine edges and mark areas to keep or remove.",
-      href: "/remove-background",
-      icon: "/remove.png",
-      gradient: "from-emerald-500 via-teal-400 to-cyan-400",
-      features: ["Brush tools", "Manual refinement", "PNG export"],
-    },
-  ];
 
   const handleToolClick = (e, tool) => {
-    // Check if user is authenticated
     if (!isAuthenticated()) {
       e.preventDefault();
-      // Redirect to login with returnUrl parameter
-      const returnUrl = encodeURIComponent(tool.href);
-      router.push(`/login?returnUrl=${returnUrl}`);
+      router.push(`/login?returnUrl=${encodeURIComponent(tool.href)}`);
     }
-    // If authenticated, let the Link component handle navigation normally
   };
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle="" />
 
-      <section className="relative flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.15),_transparent_55%),_radial-gradient(circle_at_bottom,_rgba(56,189,248,0.12),_transparent_55%)]">
-        {/* Animated wave / gradient background */}
+      {/* Hero */}
+      <section className="relative flex-1 flex flex-col">
+        {/* Subtle dot grid background */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-60 blur-3xl"
-        >
-          <div className="absolute -left-40 top-0 h-80 w-96 bg-gradient-to-br from-sky-500/50 via-cyan-400/40 to-emerald-400/40 rounded-full mix-blend-screen animate-[spin_18s_linear_infinite]" />
-          <div className="absolute -right-48 bottom-0 h-96 w-[28rem] bg-gradient-to-tr from-purple-500/40 via-sky-400/30 to-cyan-300/40 rounded-full mix-blend-screen animate-[spin_24s_linear_infinite_reverse]" />
-        </div>
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(148,163,184,0.08) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+        {/* Top glow */}
+        <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-sky-500/10 blur-[100px] rounded-full" />
 
+        <div className="relative max-w-7xl mx-auto w-full px-4 sm:px-6 py-16 sm:py-24 flex flex-col items-center">
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
-          {/* Header */}
-          <div className="text-center mb-12 sm:mb-16 space-y-4 sm:space-y-6">
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-tight animate-[fadeInUp_0.8s_ease-out]">
-              Choose Your{" "}
-              <span className="bg-gradient-to-r from-sky-400 via-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-                Creative Tool
-              </span>
-            </h1>
-            <p className="text-base sm:text-lg lg:text-xl text-slate-300 max-w-3xl mx-auto animate-[fadeInUp_0.8s_ease-out_0.2s_both]">
-              Powerful design tools to bring your creative ideas to life. All running directly in your browser.
-            </p>
+          {/* Badge */}
+          <div className="mb-8 inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-sky-500/20 bg-sky-500/5 text-sky-400 text-xs font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+            All tools run in your browser — no install needed
           </div>
 
-          {/* Tools Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 max-w-6xl mx-auto">
-            {tools.map((tool, index) => (
-              <Link
-                key={tool.id}
-                href={tool.href}
-                onClick={(e) => handleToolClick(e, tool)}
-                className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 hover:border-slate-700 transition-all duration-300 hover:shadow-2xl hover:shadow-sky-500/20 animate-[fadeInUp_0.6s_ease-out_both]"
-                style={{ animationDelay: `${0.4 + index * 0.15}s` }}
-              >
-                {/* Gradient Background on Hover */}
-                <div className={`absolute inset-0 bg-gradient-to-br ${tool.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
-                
-                <div className="relative space-y-4">
+          {/* Headline */}
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-center leading-[1.1] mb-6 max-w-4xl">
+            Design mockups{" "}
+            <span className="bg-gradient-to-r from-sky-400 to-cyan-300 bg-clip-text text-transparent">
+              in seconds
+            </span>
+          </h1>
+          <p className="text-base sm:text-lg text-slate-400 text-center max-w-xl mb-12 leading-relaxed">
+            3D mockups, 2D presentations, and background removal — everything you need to showcase your designs.
+          </p>
+
+          {/* Tool Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full max-w-5xl">
+            {tools.map((tool) => {
+              const a = accentMap[tool.accent];
+              return (
+                <Link
+                  key={tool.id}
+                  href={tool.href}
+                  onClick={(e) => handleToolClick(e, tool)}
+                  className={`group relative flex flex-col rounded-2xl border border-white/[0.07] bg-slate-900/60 p-6 hover:shadow-xl transition-all duration-300 ${a.card}`}
+                >
                   {/* Icon */}
-                  <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${tool.gradient} flex items-center justify-center text-3xl shadow-lg shadow-sky-500/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 p-2`}>
-                    <Image
-                      src={tool.icon}
-                      alt={tool.title}
-                      width={48}
-                      height={48}
-                      className="object-contain mx-auto"
-                    />
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${a.icon} flex items-center justify-center mb-5 shadow-lg group-hover:scale-105 transition-transform duration-300 p-2`}>
+                    <Image src={tool.icon} alt={tool.title} width={36} height={36} className="object-contain" />
                   </div>
 
-                  {/* Content */}
-                  <div className="space-y-2">
-                    <h3 className="text-xl sm:text-2xl font-semibold text-slate-100 group-hover:text-white transition-colors">
-                      {tool.title}
-                    </h3>
-                    <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
-                      {tool.description}
-                    </p>
-                  </div>
+                  {/* Text */}
+                  <h3 className="text-lg font-semibold text-slate-100 mb-2 group-hover:text-white transition-colors">
+                    {tool.title}
+                  </h3>
+                  <p className="text-sm text-slate-400 leading-relaxed mb-5 flex-1">
+                    {tool.description}
+                  </p>
 
-                  {/* Features */}
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {tool.features.map((feature, index) => (
-                      <span
-                        key={index}
-                        className="text-xs px-3 py-1 rounded-full border border-slate-700 bg-slate-900/50 text-slate-400"
-                      >
-                        {feature}
+                  {/* Feature badges */}
+                  <div className="flex flex-wrap gap-1.5 mb-5">
+                    {tool.features.map((f) => (
+                      <span key={f} className={`text-[11px] px-2.5 py-0.5 rounded-full border font-medium ${a.badge}`}>
+                        {f}
                       </span>
                     ))}
                   </div>
 
-                  {/* Arrow */}
-                  <div className="flex items-center text-sky-400 group-hover:text-sky-300 transition-colors pt-2">
-                    <span className="text-sm font-medium">Get Started</span>
-                    <svg
-                      className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 7l5 5m0 0l-5 5m5-5H6"
-                      />
+                  {/* CTA */}
+                  <div className={`flex items-center text-sm font-medium ${a.arrow} transition-colors`}>
+                    Open tool
+                    <svg className="w-4 h-4 ml-1.5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-
-          {/* Info Section */}
-          <div className="mt-16 sm:mt-20 text-center animate-[fadeIn_0.8s_ease-out_0.9s_both]">
-            <p className="text-sm text-slate-400">
-              No installation required • All tools run in your browser • Fast and secure
-            </p>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* Statistics Section - Scroll Down */}
-      <section className="py-12 sm:py-16 lg:py-20 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 border-t border-slate-800/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-8 sm:mb-12 space-y-3 sm:space-y-4">
-            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight px-4 animate-[fadeInUp_0.6s_ease-out]">
-              Platform <span className="bg-gradient-to-r from-sky-400 to-cyan-300 bg-clip-text text-transparent">Statistics</span>
-            </h2>
-            <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto px-4 animate-[fadeInUp_0.6s_ease-out_0.2s_both]">
-              Discover the scale of our creative platform and join thousands of creators
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 max-w-5xl mx-auto">
-            {/* Categories Stat */}
-            <div className="group relative rounded-xl sm:rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 text-center hover:border-sky-500/50 transition-all duration-300 hover:scale-105 animate-[fadeInUp_0.6s_ease-out_0.3s_both]">
-              <div className="absolute inset-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-sky-500/0 to-sky-500/0 group-hover:from-sky-500/5 group-hover:to-sky-500/0 transition-all duration-300 pointer-events-none" />
-              <div className="relative">
-                <div className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-sky-400 to-cyan-300 bg-clip-text text-transparent mb-2">
-                  4
-                </div>
-                <div className="text-lg sm:text-xl font-semibold text-slate-200 mb-2">
-                  Categories
-                </div>
-                <p className="text-xs sm:text-sm text-slate-400">
-                  Creative tools for designers
-                </p>
-              </div>
-            </div>
-
-            {/* Models Stat */}
-            <div className="group relative rounded-xl sm:rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 text-center hover:border-emerald-500/50 transition-all duration-300 hover:scale-105 animate-[fadeInUp_0.6s_ease-out_0.4s_both]">
-              <div className="absolute inset-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-500/0 to-emerald-500/0 group-hover:from-emerald-500/5 group-hover:to-emerald-500/0 transition-all duration-300 pointer-events-none" />
-              <div className="relative">
-                <div className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent mb-2">
-                  12+
-                </div>
-                <div className="text-lg sm:text-xl font-semibold text-slate-200 mb-2">
-                  Tools
-                </div>
-                <p className="text-xs sm:text-sm text-slate-400">
-                  3D, 2D mockups & background removal
-                </p>
-              </div>
-            </div>
-
-            {/* Users Stat */}
-            <div className="group relative rounded-xl sm:rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-6 sm:p-8 text-center hover:border-purple-500/50 transition-all duration-300 hover:scale-105 sm:col-span-2 lg:col-span-1 animate-[fadeInUp_0.6s_ease-out_0.5s_both]">
-              <div className="absolute inset-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-500/0 to-purple-500/0 group-hover:from-purple-500/5 group-hover:to-purple-500/0 transition-all duration-300 pointer-events-none" />
-              <div className="relative">
-                <div className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-purple-400 to-pink-300 bg-clip-text text-transparent mb-2">
-                  10K+
-                </div>
-                <div className="text-lg sm:text-xl font-semibold text-slate-200 mb-2">
-                  Active Users
-                </div>
-                <p className="text-xs sm:text-sm text-slate-400">
-                  Creators using our platform daily
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Details */}
-          <div className="mt-12 sm:mt-16 max-w-4xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 sm:p-6 hover:border-slate-700 transition-all duration-300 hover:shadow-lg hover:shadow-sky-500/10 animate-[fadeInUp_0.6s_ease-out_0.6s_both]">
-                <h3 className="text-base sm:text-lg font-semibold text-slate-200 mb-2 sm:mb-3">
-                  🎨 Rich Model Library
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                  Our platform offers a diverse collection of 3D models across multiple categories. 
-                  Each category includes several variations to suit different design needs and preferences.
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 sm:p-6 hover:border-slate-700 transition-all duration-300 hover:shadow-lg hover:shadow-sky-500/10 animate-[fadeInUp_0.6s_ease-out_0.7s_both]">
-                <h3 className="text-base sm:text-lg font-semibold text-slate-200 mb-2 sm:mb-3">
-                  👥 Growing Community
-                </h3>
-                <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                  Join thousands of designers, marketers, and creators who trust our platform 
-                  for creating stunning 3D product mockups. Start creating today!
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Footer strip */}
+      <footer className="border-t border-white/[0.06] py-6 text-center text-xs text-slate-600">
+        No installation required · Runs entirely in your browser · Fast & secure
+      </footer>
     </main>
   );
 }

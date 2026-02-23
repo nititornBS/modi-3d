@@ -2,22 +2,31 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import UserInfoDisplay from "./UserInfoDisplay";
 
+const NAV_LINKS = [
+  { href: "/models", label: "3D Mockup" },
+  { href: "/mockup-2d", label: "2D Mockup" },
+  { href: "/remove-background", label: "Remove BG" },
+];
+
 export default function Navbar({
-  subtitle = "Fast product mockups in your browser",
+  subtitle = null,
   backLink = null,
   backText = null,
   rightAction = null
 }) {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { info } = useToast();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isUserInfoOpen, setIsUserInfoOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const dropdownRef = useRef(null);
 
   const handleLoginClick = () => {
@@ -25,22 +34,19 @@ export default function Navbar({
     router.push(`/login?returnUrl=${encodeURIComponent(currentPath)}`);
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsDropdownOpen(false);
       }
     };
-
-    if (isDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    if (isDropdownOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isDropdownOpen]);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [pathname]);
 
   const getLoginMethodLabel = (method) => {
     if (method === "google") return "Google";
@@ -49,188 +55,185 @@ export default function Navbar({
   };
 
   const getDisplayUsername = () => {
-    if (user?.username && user.username.trim().length > 0) {
-      return user.username;
-    }
-    if (user?.email) {
-      const localPart = user.email.split("@")[0];
-      return localPart || null;
-    }
+    if (user?.username?.trim().length > 0) return user.username;
+    if (user?.email) return user.email.split("@")[0] || null;
     return null;
   };
 
   const getInitials = () => {
     if (user?.name) {
       const names = user.name.split(" ");
-      if (names.length >= 2) {
-        return (names[0][0] + names[1][0]).toUpperCase();
-      }
-      return names[0][0].toUpperCase();
+      return names.length >= 2
+        ? (names[0][0] + names[1][0]).toUpperCase()
+        : names[0][0].toUpperCase();
     }
-    if (user?.username && user.username.length > 0) {
-      return user.username.charAt(0).toUpperCase();
-    }
-    if (user?.email) {
-      return user.email.charAt(0).toUpperCase();
-    }
+    if (user?.username?.length > 0) return user.username.charAt(0).toUpperCase();
+    if (user?.email) return user.email.charAt(0).toUpperCase();
     return "U";
   };
 
-  return (
-    <header className="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-2 text-sm sm:text-base">
-          <span className="h-9 w-9 rounded-2xl bg-gradient-to-tr from-sky-500 via-cyan-400 to-emerald-400 shadow-md shadow-sky-500/40 flex items-center justify-center text-[11px] font-bold">
-            M3D
-          </span>
-          <div>
-            <span className="font-medium text-slate-100">Mockup 3D Studio</span>
-            {subtitle && (
-              <span className="ml-2 text-xs text-slate-400 hidden sm:inline">
-                • {subtitle}
-              </span>
-            )}
-          </div>
-        </Link>
+  const isActive = (href) => pathname === href || pathname.startsWith(href + "/");
 
-        <div className="flex items-center gap-3">
-          {backLink && (
-            <Link
-              href={backLink}
-              className="text-xs sm:text-sm text-slate-400 hover:text-sky-400 transition"
-            >
-              {backText || "← Back"}
+  // Skeleton for auth area while loading — prevents blink
+  const authSkeleton = (
+    <div className="w-24 h-8 rounded-xl bg-white/[0.06] animate-pulse" />
+  );
+
+  return (
+    <>
+      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-slate-950/80 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-16 gap-4">
+
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2.5 shrink-0">
+              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-sky-500/30">
+                <span className="text-[10px] font-black text-slate-950 tracking-tight">M3D</span>
+              </div>
+              <span className="font-semibold text-slate-100 text-sm hidden sm:block">Mockup 3D Studio</span>
             </Link>
-          )}
-          {isAuthenticated() ? (
-            <div className="relative" ref={dropdownRef}>
+
+            {/* Center Nav Links — only shown when authenticated */}
+            <nav className={`hidden md:flex items-center gap-1 ${!isLoading && !isAuthenticated() ? "invisible pointer-events-none" : ""}`}>
+              {NAV_LINKS.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                    isActive(link.href)
+                      ? "bg-sky-500/15 text-sky-300 border border-sky-500/20"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Right Side */}
+            <div className="flex items-center gap-2 shrink-0">
+              {backLink && (
+                <Link href={backLink} className="text-xs text-slate-400 hover:text-sky-400 transition hidden sm:block">
+                  {backText || "← Back"}
+                </Link>
+              )}
+
+              {/* Mobile menu toggle */}
               <button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-sky-500 transition-colors"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="md:hidden w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.06] transition"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-sm font-bold text-slate-950">
-                  {user?.picture ? (
-                    <img
-                      src={user.picture}
-                      alt={user.name || user.username}
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  ) : (
-                    getInitials()
+                {isMobileMenuOpen ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </button>
+
+              {isLoading ? authSkeleton : isAuthenticated() ? (
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-sky-500/40 hover:bg-white/[0.07] transition-all"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-slate-950 overflow-hidden">
+                      {user?.picture ? (
+                        <img src={user.picture} alt={user.name || user.username} className="w-full h-full object-cover" />
+                      ) : getInitials()}
+                    </div>
+                    <span className="hidden sm:inline text-xs text-slate-300 font-medium max-w-[100px] truncate">
+                      {user?.name || getDisplayUsername() || "User"}
+                    </span>
+                    <svg className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-60 rounded-2xl bg-slate-900/95 border border-white/[0.08] shadow-2xl shadow-black/60 backdrop-blur-xl overflow-hidden">
+                      <div className="p-4 border-b border-white/[0.06]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 flex items-center justify-center text-base font-bold text-slate-950 flex-shrink-0 overflow-hidden">
+                            {user?.picture ? (
+                              <img src={user.picture} alt={user.name || user.username} className="w-full h-full object-cover" />
+                            ) : getInitials()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-100 truncate">{user?.name || getDisplayUsername() || "No name"}</div>
+                            {user?.email && <div className="text-[11px] text-slate-500 truncate">{user.email}</div>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-2">
+                        <button
+                          onClick={() => { setIsDropdownOpen(false); setIsUserInfoOpen(true); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-slate-300 hover:bg-white/[0.06] hover:text-slate-100 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          Profile
+                        </button>
+                      </div>
+
+                      <div className="p-2 pt-0">
+                        <button
+                          onClick={() => {
+                            setIsDropdownOpen(false);
+                            info("Logged out successfully. See you soon!");
+                            setTimeout(() => logout(), 300);
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Log out
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <span className="hidden sm:inline text-xs text-slate-300 font-medium">
-                  {user?.name || getDisplayUsername() || "User"}
-                </span>
-                <svg
-                  className={`w-4 h-4 text-slate-400 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {/* Dropdown Menu */}
-              {isDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                  {/* User Info Section */}
-                  <div className="p-4 border-b border-slate-800 bg-slate-950/50">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-sky-500 to-cyan-400 flex items-center justify-center text-lg font-bold text-slate-950 flex-shrink-0">
-                        {user?.picture ? (
-                          <img
-                            src={user.picture}
-                            alt={user.name || user.username}
-                            className="w-full h-full rounded-full object-cover"
-                          />
-                        ) : (
-                          getInitials()
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-slate-100 truncate">
-                          {user?.name || getDisplayUsername() || "No name"}
-                        </div>
-                        {getDisplayUsername() && (
-                          <div className="text-xs text-slate-400 truncate">
-                            {getDisplayUsername()}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                      <span>Signed in with {getLoginMethodLabel(user?.method)}</span>
-                    </div>
-                    {user?.email && (
-                      <div className="mt-2 text-xs text-slate-500 truncate">
-                        {user.email}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* User Information Button */}
-                  <div className="p-2 border-b border-slate-800">
-                    <button
-                      onClick={() => {
-                        setIsDropdownOpen(false);
-                        setIsUserInfoOpen(true);
-                      }}
-                      className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800/50 hover:text-slate-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <span>User Information</span>
-                      </div>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Logout Button */}
-                  <div className="p-2">
-                    <button
-                      onClick={() => {
-                        setIsDropdownOpen(false);
-                        info("Logged out successfully. See you soon!");
-                        setTimeout(() => {
-                          logout();
-                        }, 300);
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      Log out
-                    </button>
-                  </div>
-                </div>
+              ) : (
+                rightAction || (
+                  <button
+                    onClick={handleLoginClick}
+                    className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold shadow-lg shadow-sky-500/25 transition-all"
+                  >
+                    Log in
+                  </button>
+                )
               )}
             </div>
-          ) : (
-            rightAction || (
-              <button
-                onClick={handleLoginClick}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 sm:px-5 py-2 text-xs sm:text-sm font-medium text-slate-100 shadow-sm hover:border-sky-500 hover:text-sky-100 transition"
-              >
-                <span className="hidden sm:inline">Log in</span>
-                <span className="sm:hidden">Login</span>
-              </button>
-            )
-          )}
+          </div>
         </div>
-      </div>
 
-      {/* User Info Display */}
+        {/* Mobile Menu */}
+        {isMobileMenuOpen && isAuthenticated() && (
+          <div className="md:hidden border-t border-white/[0.06] bg-slate-950/95 backdrop-blur-xl px-4 py-3 space-y-1">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                  isActive(link.href)
+                    ? "bg-sky-500/15 text-sky-300"
+                    : "text-slate-400 hover:text-slate-100 hover:bg-white/[0.06]"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        )}
+      </header>
+
       <UserInfoDisplay isOpen={isUserInfoOpen} onClose={() => setIsUserInfoOpen(false)} />
-    </header>
+    </>
   );
 }

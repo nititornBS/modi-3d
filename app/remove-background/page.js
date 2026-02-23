@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { removeBackground } from "@imgly/background-removal";
 import { useToast } from "@/contexts/ToastContext";
@@ -298,7 +297,6 @@ export default function RemoveBackgroundPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      <Navbar subtitle="Remove Background" backLink="/" backText="← Back to Tools" />
 
       <section className="flex-1 py-8 sm:py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
