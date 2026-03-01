@@ -18,6 +18,8 @@ import ModelUVDataLoader from "@/components/ModelUVDataLoader";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { MODEL_FILES, getModelById, getModelsByCategory } from "./modelMapping";
+import { apiClient } from "@/lib/api";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 const MODEL_OPTIONS = [
   { id: "shirt", label: "T‑Shirt", icon: "👕" },
@@ -321,13 +323,27 @@ function ProductScene({ selectedModel, selectedVariation, logoTexture, baseColor
   );
 }
 
+async function uploadToCloudinary(dataUrl, cloudName, uploadPreset, folder = "modi3d/designs") {
+  if (!dataUrl || !dataUrl.startsWith("data:")) return dataUrl;
+  const fd = new FormData();
+  fd.append("file", dataUrl);
+  fd.append("upload_preset", uploadPreset);
+  fd.append("folder", folder);
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
+  const j = await r.json();
+  if (!r.ok) throw new Error(`Upload failed: ${j?.error?.message || r.statusText}`);
+  return j.secure_url;
+}
+
 function StudioPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, token } = useAuth();
   const { success, error: showError } = useToast();
+  const { register: registerUnsaved, clear: clearUnsaved } = useUnsavedChanges();
   const urlModel = searchParams.get("model");
   const urlVariation = searchParams.get("variation");
+  const urlProject = searchParams.get("project");
 
   const [logoImages, setLogoImages] = useState([]);
   const [logoTexture, setLogoTexture] = useState(null);
@@ -341,8 +357,16 @@ function StudioPageContent() {
   const [baseColor, setBaseColor] = useState("#ffffff");
   const [autoRotate, setAutoRotate] = useState(false);
   const [activeTab, setActiveTab] = useState("edit"); // "edit" or "model"
+  const [projectId, setProjectId] = useState(null);
+  const [projectName, setProjectName] = useState("Untitled Project");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // "saved" | "error" | null
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
   const canvasRef = useRef(null);
   const sceneRef = useRef(null);
+  const glRef = useRef(null);
+  const skipNextEffect = useRef(true);
 
 
   useEffect(() => {
@@ -353,6 +377,67 @@ function StudioPageContent() {
       setSelectedVariation(urlVariation);
     }
   }, [urlModel, urlVariation]);
+
+  // Track unsaved changes — skip the very first render and any load-from-DB renders
+  useEffect(() => {
+    if (skipNextEffect.current) { skipNextEffect.current = false; return; }
+    setHasUnsavedChanges(true);
+  }, [logoImages, uvPositions, uvScales, uvRotations, baseColor]);
+
+  // Warn on browser tab close if unsaved changes
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Load project from ?project=<id> URL param
+  useEffect(() => {
+    if (!urlProject || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await apiClient.getProject(token, urlProject);
+        if (cancelled) return;
+        const data = JSON.parse(result.project.designsJson);
+        if (data.projectType !== "3d") return;
+
+        // Recreate HTMLImageElement objects from Cloudinary URLs
+        const imgs = await Promise.all(
+          (data.images || []).map(imgData => new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = imgData.url;
+          }))
+        );
+        const validImgs = imgs.filter(Boolean);
+        const positions = (data.images || []).map(d => d.uvPosition);
+        const scales    = (data.images || []).map(d => d.uvScale);
+        const rotations = (data.images || []).map(d => d.uvRotation);
+
+        skipNextEffect.current = true;
+        setProjectId(result.project.id);
+        setProjectName(result.project.name || "Untitled Project");
+        setBaseColor(data.baseColor || "#ffffff");
+        setSelectedModel(data.modelCategory || "shirt");
+        setSelectedVariation(data.modelVariation || null);
+        setLogoImages(validImgs);
+        setUvPositions(positions);
+        setUvScales(scales);
+        setUvRotations(rotations);
+        setHasUnsavedChanges(false);
+      } catch (err) {
+        console.error("[Studio] Load project error:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [urlProject, token]);
 
   // Rebuild the canvas texture whenever images, positions, scales, or base color change
   useEffect(() => {
@@ -404,8 +489,98 @@ function StudioPageContent() {
     setSelectedModel(modelId);
     setSelectedVariation(variationId);
     setSelectedComponent(null); // Reset component selection when changing models
-    router.push(`/studio?model=${modelId}&variation=${variationId || ""}`);
+    setHasUnsavedChanges(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set("model", modelId);
+    url.searchParams.set("variation", variationId || "");
+    window.history.replaceState(null, "", url.toString());
   };
+
+  const handleSave3D = useCallback(async () => {
+    if (!isAuthenticated()) {
+      router.push("/login?returnUrl=" + encodeURIComponent(window.location.pathname + window.location.search));
+      return;
+    }
+    if (isSaving) return;
+    setIsSaving(true);
+    setSaveStatus(null);
+    try {
+      const cloudName    = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+      // Upload each logo image to Cloudinary (skip if already a URL)
+      const uploadedImages = await Promise.all(
+        logoImages.map(async (img, i) => {
+          let url = img.src;
+          if (url && url.startsWith("data:") && cloudName && uploadPreset) {
+            url = await uploadToCloudinary(url, cloudName, uploadPreset);
+          }
+          return {
+            url,
+            uvPosition: uvPositions[i] || { u: 0.5, v: 0.5 },
+            uvScale:    uvScales[i]    || { u: 0.3, v: 0.3 },
+            uvRotation: uvRotations[i] || 0,
+          };
+        })
+      );
+
+      // Capture thumbnail from the WebGL canvas
+      let thumbnail = null;
+      try {
+        const domCanvas = glRef.current?.domElement;
+        if (domCanvas) {
+          const dataUrl = domCanvas.toDataURL("image/jpeg", 0.8);
+          if (cloudName && uploadPreset) {
+            thumbnail = await uploadToCloudinary(dataUrl, cloudName, uploadPreset, "modi3d/thumbnails");
+          }
+        }
+      } catch (err) {
+        console.warn("[Studio] Thumbnail capture failed:", err);
+      }
+
+      const designsJson = JSON.stringify({
+        projectType:    "3d",
+        modelCategory:  selectedModel,
+        modelVariation: selectedVariation,
+        baseColor,
+        images: uploadedImages,
+      });
+
+      const result = await apiClient.saveProject(token, {
+        id:         projectId || undefined,
+        name:       projectName,
+        templateId: selectedVariation || selectedModel,
+        designsJson,
+        thumbnail,
+      });
+
+      setProjectId(result.project.id);
+      setHasUnsavedChanges(false);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(null), 3000);
+
+      // Persist project ID in URL without navigation
+      const url = new URL(window.location.href);
+      url.searchParams.set("project", result.project.id);
+      window.history.replaceState(null, "", url.toString());
+    } catch (err) {
+      console.error("[Studio] Save error:", err);
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus(null), 4000);
+      showError("Failed to save: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isAuthenticated, isSaving, logoImages, uvPositions, uvScales, uvRotations, baseColor, selectedModel, selectedVariation, projectId, projectName, token, router, success, showError]);
+
+  // ── Register unsaved state with Navbar guard ─────────────────────────────
+  useEffect(() => {
+    registerUnsaved(hasUnsavedChanges, handleSave3D);
+  }, [hasUnsavedChanges, handleSave3D, registerUnsaved]);
+
+  useEffect(() => {
+    return () => clearUnsaved();
+  }, [clearUnsaved]);
 
   // Export function to download model with texture
   const handleExport = useCallback(async () => {
@@ -722,6 +897,75 @@ function StudioPageContent() {
 
   return (
     <main className="bg-slate-950 text-slate-50 flex flex-col overflow-hidden" style={{ height: "calc(100vh - 64px)" }}>
+
+      {/* ── Top Bar ── */}
+      <div className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-slate-800/60 bg-slate-900/70">
+
+        {/* Back */}
+        <button
+          onClick={() => hasUnsavedChanges ? setShowExitModal(true) : router.push("/models")}
+          className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-xs transition-colors shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+
+        <div className="w-px h-5 bg-slate-700/60 shrink-0" />
+
+        {/* Model label + unsaved dot */}
+        <span className="text-xs text-slate-500 truncate max-w-[140px] shrink-0">
+          {MODEL_OPTIONS.find(m => m.id === selectedModel)?.label || "3D Studio"}
+        </span>
+        {hasUnsavedChanges && (
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Unsaved changes" />
+        )}
+
+        <div className="flex-1" />
+
+        {/* Save (only when logged in) */}
+        {token && (
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="text"
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              placeholder="Project name…"
+              className="w-36 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500"
+            />
+            <button
+              onClick={handleSave3D}
+              disabled={isSaving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:border-sky-500/60 hover:bg-sky-500/10 text-slate-300 hover:text-sky-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isSaving
+                ? <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+              }
+              {isSaving ? "Saving…" : projectId ? "Update" : "Save"}
+            </button>
+            {saveStatus === "saved" && <span className="text-[10px] text-emerald-400">Saved!</span>}
+            {saveStatus === "error"  && <span className="text-[10px] text-red-400">Failed</span>}
+            <div className="w-px h-5 bg-slate-700/60" />
+          </div>
+        )}
+
+        {/* Export */}
+        <button
+          onClick={handleExport}
+          disabled={!selectedVariation && getModelsByCategory(selectedModel).length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white text-xs font-bold shadow-lg shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export
+        </button>
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Desktop Sidebar ── */}
@@ -950,15 +1194,6 @@ function StudioPageContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </label>
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold px-3 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 group"
-            >
-              <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span className="text-xs font-medium">Export</span>
-            </button>
           </div>
 
           <Canvas
@@ -966,7 +1201,7 @@ function StudioPageContent() {
             shadows
             dpr={[1, 2]}
             gl={{ preserveDrawingBuffer: true, antialias: true, powerPreference: "high-performance" }}
-            onCreated={({ scene }) => { sceneRef.current = scene; }}
+            onCreated={({ scene, gl }) => { sceneRef.current = scene; glRef.current = gl; }}
             className="w-full h-full"
           >
             <Suspense fallback={<LoadingBox />}>
@@ -1104,6 +1339,40 @@ function StudioPageContent() {
           />
         )}
       </ModelUVDataLoader>
+
+      {/* ── Unsaved Changes Exit Modal ── */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <h2 className="text-lg font-bold text-slate-100 mb-2">Unsaved changes</h2>
+            <p className="text-sm text-slate-400 mb-6">You have unsaved changes. Do you want to save before leaving?</p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={async () => {
+                  setShowExitModal(false);
+                  await handleSave3D();
+                  router.push("/models");
+                }}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-slate-950 font-semibold text-sm transition-all"
+              >
+                Save &amp; Leave
+              </button>
+              <button
+                onClick={() => { setShowExitModal(false); router.push("/models"); }}
+                className="w-full py-2.5 rounded-xl border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 font-medium text-sm transition-all"
+              >
+                Leave without saving
+              </button>
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="w-full py-2.5 rounded-xl text-slate-500 hover:text-slate-300 font-medium text-sm transition-colors"
+              >
+                Keep editing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

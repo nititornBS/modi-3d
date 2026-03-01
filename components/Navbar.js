@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 import UserInfoDisplay from "./UserInfoDisplay";
 
 const NAV_LINKS = [
@@ -24,10 +25,35 @@ export default function Navbar({
   const router = useRouter();
   const pathname = usePathname();
   const { info } = useToast();
+  const { hasUnsavedChanges, saveHandler } = useUnsavedChanges();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isUserInfoOpen, setIsUserInfoOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState(null);
+  const [isSavingNav, setIsSavingNav] = useState(false);
   const dropdownRef = useRef(null);
+
+  // Intercept nav link clicks when editor has unsaved changes
+  const handleNavClick = (e, href) => {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      setPendingHref(href);
+    }
+  };
+
+  const handleLeave = () => {
+    const dest = pendingHref;
+    setPendingHref(null);
+    router.push(dest);
+  };
+
+  const handleSaveAndLeave = async () => {
+    if (!saveHandler) { handleLeave(); return; }
+    setIsSavingNav(true);
+    try { await saveHandler(); } catch (_) { /* ignore */ }
+    setIsSavingNav(false);
+    handleLeave();
+  };
 
   const handleLoginClick = () => {
     const currentPath = window.location.pathname;
@@ -86,7 +112,7 @@ export default function Navbar({
           <div className="flex items-center justify-between h-16 gap-4">
 
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2.5 shrink-0">
+            <Link href="/" onClick={(e) => handleNavClick(e, "/")} className="flex items-center gap-2.5 shrink-0">
               <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-sky-500/30">
                 <span className="text-[10px] font-black text-slate-950 tracking-tight">M3D</span>
               </div>
@@ -99,6 +125,7 @@ export default function Navbar({
                 <Link
                   key={link.href}
                   href={link.href}
+                  onClick={(e) => handleNavClick(e, link.href)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                     isActive(link.href)
                       ? "bg-sky-500/15 text-sky-300 border border-sky-500/20"
@@ -220,6 +247,7 @@ export default function Navbar({
               <Link
                 key={link.href}
                 href={link.href}
+                onClick={(e) => handleNavClick(e, link.href)}
                 className={`flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                   isActive(link.href)
                     ? "bg-sky-500/15 text-sky-300"
@@ -234,6 +262,44 @@ export default function Navbar({
       </header>
 
       <UserInfoDisplay isOpen={isUserInfoOpen} onClose={() => setIsUserInfoOpen(false)} />
+
+      {/* ── Unsaved changes guard modal ── */}
+      {pendingHref && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <h2 className="text-lg font-bold text-slate-100 mb-2">Unsaved changes</h2>
+            <p className="text-sm text-slate-400 mb-6">You have unsaved changes. Do you want to save before leaving?</p>
+            <div className="flex flex-col gap-2">
+              {saveHandler && (
+                <button
+                  onClick={handleSaveAndLeave}
+                  disabled={isSavingNav}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 disabled:opacity-50 text-slate-950 font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                >
+                  {isSavingNav && (
+                    <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  )}
+                  Save &amp; Leave
+                </button>
+              )}
+              <button
+                onClick={handleLeave}
+                disabled={isSavingNav}
+                className="w-full py-2.5 rounded-xl border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 font-medium text-sm transition-all"
+              >
+                Leave without saving
+              </button>
+              <button
+                onClick={() => setPendingHref(null)}
+                disabled={isSavingNav}
+                className="w-full py-2.5 rounded-xl text-slate-500 hover:text-slate-300 font-medium text-sm transition-colors"
+              >
+                Keep editing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

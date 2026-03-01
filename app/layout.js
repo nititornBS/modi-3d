@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { UnsavedChangesProvider } from "@/contexts/UnsavedChangesContext";
 import ToastContainer from "@/components/ToastContainer";
 import ErrorFilter from "@/components/ErrorFilter";
 import Navbar from "@/components/Navbar";
@@ -30,9 +31,11 @@ export default function RootLayout({ children }) {
         <ErrorFilter />
         <AuthProvider>
           <ToastProvider>
-            <Navbar />
-            {children}
-            <ToastContainer />
+            <UnsavedChangesProvider>
+              <Navbar />
+              {children}
+              <ToastContainer />
+            </UnsavedChangesProvider>
           </ToastProvider>
         </AuthProvider>
       </body>

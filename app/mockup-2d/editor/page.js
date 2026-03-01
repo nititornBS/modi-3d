@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { TEMPLATES } from "../templates";
+import { apiClient } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useUnsavedChanges } from "@/contexts/UnsavedChangesContext";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -320,13 +323,36 @@ function DesignElement({
   );
 }
 
+// Upload a single image (dataURL or URL) to Cloudinary.
+// If it's already a Cloudinary URL, skip and return it as-is.
+async function uploadDesignToCloudinary(src, cloudName, uploadPreset) {
+  if (!src || !src.startsWith("data:")) return src; // already a URL, skip
+  const fd = new FormData();
+  fd.append("file",          src);
+  fd.append("upload_preset", uploadPreset);
+  fd.append("folder",        "modi3d/designs");
+  const r = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
+  const j = await r.json();
+  if (!r.ok) throw new Error(`Design upload failed: ${j?.error?.message || r.statusText}`);
+  return j.secure_url;
+}
+
 // ─── Editor ───────────────────────────────────────────────────────────────────
 
 function EditorContent() {
-  const searchParams = useSearchParams();
-  const router       = useRouter();
-  const templateId   = searchParams.get("template");
-  const tpl          = (templateId && TEMPLATES[templateId]) || TEMPLATES["billboard-street"];
+  const searchParams   = useSearchParams();
+  const router         = useRouter();
+  const { token }      = useAuth();
+  const { register: registerUnsaved, clear: clearUnsaved } = useUnsavedChanges();
+  const templateId     = searchParams.get("template");
+  const projectIdParam = searchParams.get("project");
+  // Support custom user-uploaded backgrounds via ?bg=<url>&name=<name>&category=<cat>
+  const customBgUrl  = searchParams.get("bg");
+  const customBgName = searchParams.get("name") || "Custom Background";
+  const customBgCat  = searchParams.get("category") || "custom";
+  const tpl = customBgUrl
+    ? { image: customBgUrl, name: customBgName, category: customBgCat, areaWidth: 0.4, areaHeight: 0.4, areaX: 0.5, areaY: 0.5 }
+    : (templateId && TEMPLATES[templateId]) || TEMPLATES["billboard-street"];
 
   const [templateImg,   setTemplateImg]   = useState(null);
   const [designs,       setDesigns]       = useState([]);
@@ -336,11 +362,21 @@ function EditorContent() {
   const [dtColor2,      setDtColor2]      = useState([236, 72, 153]);
   const [cDims,         setCDims]         = useState({ w: 1, h: 1 });
 
+  // ── Project save state ───────────────────────────────────────────────────
+  const [projectId,        setProjectId]        = useState(projectIdParam || null);
+  const [projectName,      setProjectName]      = useState("Untitled Project");
+  const [isSaving,         setIsSaving]         = useState(false);
+  const [saveStatus,       setSaveStatus]       = useState(null); // "saved" | "error" | null
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showExitModal,    setShowExitModal]    = useState(false);
+
   const containerRef  = useRef(null);
   const fileInputRef  = useRef(null);
   const dragRef       = useRef(null);
   const origSrcRef    = useRef({});
   const exportImgRef  = useRef({});
+  // true on first render + after project load — prevents those from triggering "unsaved"
+  const skipNextDesignsEffect = useRef(true);
 
   // ── Track container pixel dimensions ─────────────────────────────────────
   useEffect(() => {
@@ -385,6 +421,46 @@ function EditorContent() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId]);
+
+  // ── Track unsaved changes ────────────────────────────────────────────────
+  useEffect(() => {
+    if (skipNextDesignsEffect.current) { skipNextDesignsEffect.current = false; return; }
+    setHasUnsavedChanges(true);
+  }, [designs]);
+
+  // ── Warn on browser tab close / refresh if unsaved ───────────────────────
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+
+  // ── Load project from API (when ?project=<id> in URL) ───────────────────
+  useEffect(() => {
+    if (!projectIdParam || !token) return;
+    apiClient.getProject(token, projectIdParam)
+      .then(({ project }) => {
+        setProjectId(project.id);
+        setProjectName(project.name);
+        const loaded = JSON.parse(project.designsJson);
+        loaded.forEach(d => {
+          origSrcRef.current[d.id] = d.src;
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => { exportImgRef.current[d.id] = img; };
+          img.src = d.displaySrc || d.src;
+        });
+        skipNextDesignsEffect.current = true;
+        setDesigns(loaded);
+        setHasUnsavedChanges(false);
+      })
+      .catch(err => console.error("[Editor] Load project error:", err));
+  }, [projectIdParam, token]);
 
   // ── Global mouse-move / mouse-up ─────────────────────────────────────────
   useEffect(() => {
@@ -535,6 +611,118 @@ function EditorContent() {
     updateSelected({ displaySrc: orig });
   };
 
+  // ── Save project ──────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!token || isSaving) return;
+    setIsSaving(true);
+    setSaveStatus(null);
+    try {
+      const cloudName    = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+      // Build thumbnail (small canvas render)
+      let thumbnail = null;
+      if (templateImg) {
+        const nW  = Math.min(templateImg.naturalWidth, 600);
+        const nH  = Math.round(nW * templateImg.naturalHeight / templateImg.naturalWidth);
+        const cvs = document.createElement("canvas");
+        cvs.width = nW; cvs.height = nH;
+        const ctx = cvs.getContext("2d");
+        ctx.drawImage(templateImg, 0, 0, nW, nH);
+        designs.forEach(d => {
+          const img = exportImgRef.current[d.id];
+          if (!img) return;
+          const bm = BLEND_MODES.find(b => b.id === d.blendMode)?.canvas ?? "source-over";
+          ctx.save();
+          ctx.globalAlpha = d.opacity;
+          ctx.globalCompositeOperation = bm;
+          if (d.corners) {
+            const c = d.corners;
+            const x = d.x*nW, y = d.y*nH, w = d.w*nW, h = d.h*nH;
+            const dst = [
+              { x: x + c[0].dx*nW,   y: y + c[0].dy*nH   },
+              { x: x+w + c[1].dx*nW, y: y + c[1].dy*nH   },
+              { x: x+w + c[2].dx*nW, y: y+h + c[2].dy*nH },
+              { x: x + c[3].dx*nW,   y: y+h + c[3].dy*nH },
+            ];
+            _drawPerspectiveWarp(ctx, img, dst, d.opacity, bm);
+          } else {
+            ctx.drawImage(img, d.x*nW, d.y*nH, d.w*nW, d.h*nH);
+          }
+          ctx.restore();
+        });
+        const dataUrl = cvs.toDataURL("image/jpeg", 0.75);
+
+        // Upload thumbnail to Cloudinary
+        if (cloudName && uploadPreset) {
+          const fd = new FormData();
+          fd.append("file", dataUrl);
+          fd.append("upload_preset", uploadPreset);
+          fd.append("folder", "modi3d/thumbnails");
+          const r = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: fd });
+          const j = await r.json();
+          if (r.ok) thumbnail = j.secure_url;
+        } else {
+          thumbnail = dataUrl; // fallback: store as dataURL
+        }
+      }
+
+      // Upload each design layer image to Cloudinary individually, then store URLs
+      const savedDesigns = await Promise.all(designs.map(async d => {
+        const origSrc = origSrcRef.current[d.id] || d.src;
+        const dispSrc = d.displaySrc;
+
+        let savedSrc        = origSrc;
+        let savedDisplaySrc = dispSrc;
+
+        if (cloudName && uploadPreset) {
+          // Upload original image (skip if already a Cloudinary URL)
+          savedSrc = await uploadDesignToCloudinary(origSrc, cloudName, uploadPreset);
+
+          // Upload displaySrc only if it differs from original (effect was applied)
+          if (dispSrc && dispSrc !== origSrc) {
+            savedDisplaySrc = await uploadDesignToCloudinary(dispSrc, cloudName, uploadPreset);
+          } else {
+            savedDisplaySrc = savedSrc;
+          }
+        }
+
+        return { ...d, src: savedSrc, displaySrc: savedDisplaySrc };
+      }));
+
+      const designsJson = JSON.stringify(savedDesigns);
+
+      const { project } = await apiClient.saveProject(token, {
+        id:         projectId || undefined,
+        name:       projectName || "Untitled Project",
+        templateId: templateId || null,
+        bgUrl:      customBgUrl || tpl?.image || null,
+        designsJson,
+        thumbnail,
+      });
+
+      setProjectId(project.id);
+      setHasUnsavedChanges(false);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      console.error("[Editor] Save error:", err);
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus(null), 4000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // ── Register unsaved state with Navbar guard ─────────────────────────────
+  useEffect(() => {
+    registerUnsaved(hasUnsavedChanges, handleSave);
+  }, [hasUnsavedChanges, handleSave, registerUnsaved]);
+
+  useEffect(() => {
+    return () => clearUnsaved();
+  }, [clearUnsaved]);
+
   // ── Export ────────────────────────────────────────────────────────────────
   const handleExport = () => {
     if (!templateImg || designs.length === 0) return;
@@ -606,13 +794,80 @@ function EditorContent() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+    <main className="flex flex-col bg-slate-950 text-slate-50 overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
 
-      <div className="flex-1 flex overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
+      {/* ── Top editor bar ──────────────────────────────────────────────── */}
+      <div className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-slate-800/60 bg-slate-900/70">
+
+        {/* Back */}
+        <button
+          onClick={() => hasUnsavedChanges ? setShowExitModal(true) : router.push("/mockup-2d")}
+          className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-xs transition-colors shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+
+        <div className="w-px h-5 bg-slate-700/60 shrink-0" />
+
+        {/* Template name + unsaved dot */}
+        <span className="text-xs text-slate-500 truncate max-w-[140px] shrink-0">{tpl?.name || "Editor"}</span>
+        {hasUnsavedChanges && (
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Unsaved changes" />
+        )}
+
+        <div className="flex-1" />
+
+        {/* Save (only when logged in) */}
+        {token && (
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="text"
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              placeholder="Project name…"
+              className="w-36 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+            />
+            <button
+              onClick={handleSave}
+              disabled={isSaving || designs.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:border-purple-500/60 hover:bg-purple-500/10 text-slate-300 hover:text-purple-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isSaving
+                ? <div className="w-3.5 h-3.5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+              }
+              {isSaving ? "Saving…" : projectId ? "Update" : "Save"}
+            </button>
+            {saveStatus === "saved" && <span className="text-[10px] text-emerald-400">Saved!</span>}
+            {saveStatus === "error"  && <span className="text-[10px] text-red-400">Failed</span>}
+            <div className="w-px h-5 bg-slate-700/60" />
+          </div>
+        )}
+
+        {/* Export */}
+        <button
+          onClick={handleExport}
+          disabled={designs.length === 0 || !templateImg}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white text-xs font-bold shadow-lg shadow-purple-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export PNG
+        </button>
+      </div>
+
+      {/* ── Main content ────────────────────────────────────────────────── */}
+      <div className="flex-1 flex overflow-hidden">
 
         {/* ── Canvas area ─────────────────────────────────────────────────── */}
         <div
-          className="flex-1 flex items-center justify-center p-6 overflow-hidden"
+          className="flex-1 flex items-center justify-center p-4 overflow-hidden"
           style={{ background: "radial-gradient(circle at center, rgba(139,92,246,0.07) 0%, transparent 70%)" }}
         >
           {templateImg ? (
@@ -621,7 +876,7 @@ function EditorContent() {
               className="relative shadow-2xl shadow-black/60 rounded-sm overflow-visible"
               style={{
                 aspectRatio: containerAspect,
-                maxWidth: `min(100%, calc((100vh - 110px) * ${templateImg.naturalWidth / templateImg.naturalHeight}))`,
+                maxWidth: `min(100%, calc((100vh - 153px) * ${templateImg.naturalWidth / templateImg.naturalHeight}))`,
                 width: "100%",
               }}
               onMouseDown={(e) => { if (e.target === containerRef.current) setSelectedId(null); }}
@@ -665,14 +920,14 @@ function EditorContent() {
         </div>
 
         {/* ── Controls panel ──────────────────────────────────────────────── */}
-        <aside className="w-72 shrink-0 flex flex-col border-l border-slate-800/60 bg-slate-900/50 overflow-y-auto">
+        <aside className="w-64 shrink-0 flex flex-col border-l border-slate-800/60 bg-slate-900/50 overflow-hidden">
           <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
 
-          {/* Upload */}
-          <div className="p-4 border-b border-slate-800/50">
+          {/* Upload — fixed top */}
+          <div className="shrink-0 p-3 border-b border-slate-800/50">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-500/15 to-pink-500/10 border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200 text-sm font-semibold transition-all"
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-gradient-to-r from-purple-500/15 to-pink-500/10 border border-purple-500/30 hover:border-purple-400/60 hover:bg-purple-500/20 text-purple-300 hover:text-purple-200 text-sm font-semibold transition-all"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -680,6 +935,9 @@ function EditorContent() {
               Add Image
             </button>
           </div>
+
+          {/* Scrollable middle: layers + transform controls */}
+          <div className="flex-1 overflow-y-auto">
 
           {/* Layers */}
           {designs.length > 0 && (
@@ -1000,12 +1258,12 @@ function EditorContent() {
 
               <p className="text-[10px] text-slate-600 text-center">
                 {sel.corners
-                  ? "Drag colored handles to set perspective · Scroll panel for corners"
+                  ? "Drag colored handles to set perspective"
                   : "Arrow keys to nudge · Shift+Arrow for larger steps · Delete to remove"}
               </p>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center px-4">
+            <div className="flex-1 flex items-center justify-center px-4 py-8">
               {designs.length > 0
                 ? <p className="text-xs text-slate-500 text-center">Click a design on the canvas or select a layer above</p>
                 : <p className="text-xs text-slate-600 text-center">Add an image to start</p>
@@ -1013,22 +1271,50 @@ function EditorContent() {
             </div>
           )}
 
-          {/* Export */}
-          <div className="p-4 border-t border-slate-800/50 mt-auto">
-            <button
-              onClick={handleExport}
-              disabled={designs.length === 0 || !templateImg}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-sm shadow-lg shadow-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export PNG
-            </button>
-            <p className="text-[10px] text-slate-600 text-center mt-2">Full-resolution export</p>
-          </div>
+          </div>{/* end scrollable middle */}
         </aside>
-      </div>
+      </div>{/* end main content */}
+
+      {/* ── Unsaved changes exit modal ───────────────────────────────────── */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <h3 className="text-slate-100 font-semibold text-base">Unsaved Changes</h3>
+            </div>
+            <p className="text-slate-400 text-sm mb-5 leading-relaxed">
+              Your project has unsaved changes. If you leave now, your work will be lost.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 text-sm font-medium transition-all"
+              >
+                Keep Editing
+              </button>
+              {token && designs.length > 0 && (
+                <button
+                  onClick={async () => { setShowExitModal(false); await handleSave(); router.push("/mockup-2d"); }}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30 hover:text-purple-200 text-sm font-medium transition-all"
+                >
+                  Save & Leave
+                </button>
+              )}
+              <button
+                onClick={() => router.push("/mockup-2d")}
+                className="flex-1 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:text-red-300 text-sm font-medium transition-all"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
