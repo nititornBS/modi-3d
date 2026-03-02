@@ -377,6 +377,8 @@ function EditorContent() {
   const exportImgRef  = useRef({});
   // true on first render + after project load — prevents those from triggering "unsaved"
   const skipNextDesignsEffect = useRef(true);
+  // Always holds the latest handleSave — avoids recreating it as a useEffect dep
+  const handleSaveRef = useRef(null);
 
   // ── Track container pixel dimensions ─────────────────────────────────────
   useEffect(() => {
@@ -714,10 +716,13 @@ function EditorContent() {
     }
   };
 
+  // Keep ref current so the registered callback always calls the latest handleSave
+  handleSaveRef.current = handleSave;
+
   // ── Register unsaved state with Navbar guard ─────────────────────────────
   useEffect(() => {
-    registerUnsaved(hasUnsavedChanges, handleSave);
-  }, [hasUnsavedChanges, handleSave, registerUnsaved]);
+    registerUnsaved(hasUnsavedChanges, () => handleSaveRef.current?.());
+  }, [hasUnsavedChanges, registerUnsaved]);
 
   useEffect(() => {
     return () => clearUnsaved();
