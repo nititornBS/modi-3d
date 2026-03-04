@@ -34,12 +34,15 @@ function ModelsPageContent() {
 
   const [saved3DProjects, setSaved3DProjects] = useState([]);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const [projectsLoading, setProjectsLoading]     = useState(false);
 
   useEffect(() => {
     if (!token) { setSaved3DProjects([]); return; }
+    setProjectsLoading(true);
     apiClient.getProjects(token)
       .then(data => setSaved3DProjects((data.projects || []).filter(p => p.projectType === "3d")))
-      .catch(() => setSaved3DProjects([]));
+      .catch(() => setSaved3DProjects([]))
+      .finally(() => setProjectsLoading(false));
   }, [token]);
 
   async function handleDeleteProject(id) {
@@ -188,12 +191,23 @@ function ModelsPageContent() {
             {/* Saved 3D project cards — shown in "All" and "Your Projects" tabs */}
             {(selectedCategory === "yours" || selectedCategory === "all") && (
               <>
-                {saved3DProjects.length === 0 && selectedCategory === "yours" && (
+                {/* Skeleton cards while loading */}
+                {projectsLoading && Array.from({ length: 3 }).map((_, i) => (
+                  <div key={`skeleton-${i}`} className="bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden animate-pulse">
+                    <div className="aspect-square bg-slate-800" />
+                    <div className="p-3 space-y-2">
+                      <div className="h-2.5 bg-slate-700 rounded w-3/4" />
+                      <div className="h-2 bg-slate-800 rounded w-1/2" />
+                    </div>
+                  </div>
+                ))}
+
+                {!projectsLoading && saved3DProjects.length === 0 && selectedCategory === "yours" && (
                   <p className="col-span-full text-sm text-slate-500 py-8 text-center">
                     {token ? "No saved 3D projects yet." : "Log in to see your saved 3D projects."}
                   </p>
                 )}
-                {saved3DProjects.map((proj) => (
+                {!projectsLoading && saved3DProjects.map((proj) => (
                   <div
                     key={proj.id}
                     className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-sky-500/50 hover:bg-slate-900 transition-all duration-200"
