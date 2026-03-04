@@ -557,7 +557,8 @@ function StudioPageContent() {
       setProjectId(result.project.id);
       setHasUnsavedChanges(false);
       setSaveStatus("saved");
-      setTimeout(() => setSaveStatus(null), 3000);
+      setTimeout(() => setSaveStatus(null), 2500);
+      success("Project saved successfully!");
 
       // Persist project ID in URL without navigation
       const url = new URL(window.location.href);
@@ -566,8 +567,8 @@ function StudioPageContent() {
     } catch (err) {
       console.error("[Studio] Save error:", err);
       setSaveStatus("error");
-      setTimeout(() => setSaveStatus(null), 4000);
-      showError("Failed to save: " + err.message);
+      setTimeout(() => setSaveStatus(null), 3000);
+      showError("Save failed — " + (err.message || "please try again"));
     } finally {
       setIsSaving(false);
     }
@@ -937,18 +938,31 @@ function StudioPageContent() {
             <button
               onClick={handleSave3D}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 hover:border-sky-500/60 hover:bg-sky-500/10 text-slate-300 hover:text-sky-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                saveStatus === "saved"
+                  ? "bg-emerald-500/20 border border-emerald-500/60 text-emerald-300"
+                  : saveStatus === "error"
+                  ? "bg-red-500/20 border border-red-500/60 text-red-300"
+                  : "bg-slate-800 border border-slate-700 hover:border-sky-500/60 hover:bg-sky-500/10 text-slate-300 hover:text-sky-300"
+              }`}
             >
-              {isSaving
-                ? <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-                : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                  </svg>
-              }
-              {isSaving ? "Saving…" : projectId ? "Update" : "Save"}
+              {isSaving ? (
+                <div className="w-3.5 h-3.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+              ) : saveStatus === "saved" ? (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : saveStatus === "error" ? (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+              )}
+              {isSaving ? "Saving…" : saveStatus === "saved" ? "Saved!" : saveStatus === "error" ? "Failed" : projectId ? "Update" : "Save"}
             </button>
-            {saveStatus === "saved" && <span className="text-[10px] text-emerald-400">Saved!</span>}
-            {saveStatus === "error"  && <span className="text-[10px] text-red-400">Failed</span>}
             <div className="w-px h-5 bg-slate-700/60" />
           </div>
         )}

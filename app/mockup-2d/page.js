@@ -17,44 +17,14 @@ const CATEGORIES = [
   { id: "yours",  name: "Your Projects", icon: "📁" },
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL
-  ? (process.env.NEXT_PUBLIC_API_BASE_URL.startsWith("http")
-      ? process.env.NEXT_PUBLIC_API_BASE_URL
-      : `https://${process.env.NEXT_PUBLIC_API_BASE_URL}`)
-  : "http://localhost:4000";
-
-// Upload a file directly to Cloudinary from the browser.
-// Returns { secure_url, public_id }
-async function uploadToCloudinary(file) {
-  const cloudName    = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-
-  console.log("[Cloudinary] cloud_name:", cloudName);
-  console.log("[Cloudinary] upload_preset:", uploadPreset);
-  console.log("[Cloudinary] file:", file.name, file.type, file.size, "bytes");
-
-  if (!cloudName || !uploadPreset) throw new Error("Cloudinary is not configured yet.");
-
-  const body = new FormData();
-  body.append("file",          file);
-  body.append("upload_preset", uploadPreset);
-  body.append("folder",        "modi3d/backgrounds");
-
-  console.log("[Cloudinary] Uploading to Cloudinary...");
-  const res  = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-    method: "POST",
-    body,
+// Read a File as a DataURL (no Cloudinary upload — deferred to project save).
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = (ev) => resolve(ev.target.result);
+    reader.onerror = ()  => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
   });
-
-  const data = await res.json();
-  console.log("[Cloudinary] Response:", data);
-
-  if (!res.ok) {
-    throw new Error(`Cloudinary error: ${data?.error?.message || res.statusText}`);
-  }
-
-  console.log("[Cloudinary] Upload success! URL:", data.secure_url);
-  return data; // { secure_url, public_id, ... }
 }
 
 function Mockup2DContent() {
@@ -64,20 +34,15 @@ function Mockup2DContent() {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [searchQuery, setSearchQuery]           = useState("");
 
-  const [userBackgrounds, setUserBackgrounds] = useState([]);
-  const [uploading, setUploading]             = useState(false);
-  const [uploadError, setUploadError]         = useState("");
-  const [deletingId, setDeletingId]           = useState(null);
+  const [uploading, setUploading]   = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef(null);
 
-  const [savedProjects, setSavedProjects]       = useState([]);
+  const [savedProjects, setSavedProjects]         = useState([]);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
 
   useEffect(() => {
-    if (!token) { setUserBackgrounds([]); setSavedProjects([]); return; }
-    apiClient.getUserBackgrounds(token)
-      .then(data => setUserBackgrounds(data.backgrounds || []))
-      .catch(() => setUserBackgrounds([]));
+    if (!token) { setSavedProjects([]); return; }
     apiClient.getProjects(token)
       .then(data => setSavedProjects(data.projects || []))
       .catch(() => setSavedProjects([]));
@@ -90,37 +55,20 @@ function Mockup2DContent() {
     setUploading(true);
     setUploadError("");
     try {
-      // Step 1 — upload image to Cloudinary directly from the browser
-      const cloud = await uploadToCloudinary(file);
+      // Store the file as a DataURL in sessionStorage so the editor can pick it up.
+      // Cloudinary upload is deferred until the user clicks Save in the editor.
+      const dataUrl = await readFileAsDataUrl(file);
+      sessionStorage.setItem("pendingBg",     dataUrl);
+      sessionStorage.setItem("pendingBgName", file.name);
 
-      // Step 2 — send the Cloudinary URL + publicId to the backend to store in DB
-      console.log("[Save] Sending to backend:", cloud.secure_url, cloud.public_id);
-      const data = await apiClient.saveBackground(token, {
-        url:      cloud.secure_url,
-        publicId: cloud.public_id,
-        name:     file.name,
-        category: "custom",
-      });
-      console.log("[Save] Saved to DB:", data.background);
-
-      setUserBackgrounds(prev => [data.background, ...prev]);
+      router.push(
+        `/mockup-2d/editor?bg=__pending__&name=${encodeURIComponent(file.name)}&category=custom`
+      );
     } catch (err) {
       console.error("[Upload] Error:", err);
       setUploadError(err.message || "Upload failed");
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function handleDelete(id) {
-    setDeletingId(id);
-    try {
-      await apiClient.deleteBackground(token, id);
-      setUserBackgrounds(prev => prev.filter(b => b.id !== id));
-    } catch (err) {
-      setUploadError(err.message || "Delete failed");
-    } finally {
-      setDeletingId(null);
     }
   }
 
@@ -136,21 +84,13 @@ function Mockup2DContent() {
     }
   }
 
-  function bgImageUrl(bg) {
-    // Cloudinary URLs are already full https://… ; local ones start with /uploads/
-    return bg.url.startsWith("http") ? bg.url : `${API_BASE}${bg.url}`;
-  }
-
-  function openCustomBackground(bg) {
-    router.push(
-      `/mockup-2d/editor?bg=${encodeURIComponent(bgImageUrl(bg))}&name=${encodeURIComponent(bg.name)}&category=custom`
-    );
-  }
-
   const isYours = selectedCategory === "yours";
   const isAll   = selectedCategory === "all";
   // Show the Your Projects cards in both "All" and "Your Projects" tabs
   const showYoursCards = isYours || isAll;
+
+  // Only show 2D projects here; 3D projects belong on the /models page
+  const saved2DProjects = savedProjects.filter(p => p.projectType !== "3d");
 
   const filteredTemplates = useMemo(() => {
     if (isYours) return [];
@@ -259,8 +199,8 @@ function Mockup2DContent() {
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {CATEGORIES.map((cat) => {
                 const count =
-                  cat.id === "all"   ? TEMPLATE_LIST.length + userBackgrounds.length + savedProjects.length :
-                  cat.id === "yours" ? userBackgrounds.length + savedProjects.length :
+                  cat.id === "all"   ? TEMPLATE_LIST.length + saved2DProjects.length :
+                  cat.id === "yours" ? saved2DProjects.length :
                   TEMPLATE_LIST.filter((t) => t.category === cat.id).length;
                 const isSelected = selectedCategory === cat.id;
 
@@ -293,9 +233,9 @@ function Mockup2DContent() {
           <div className="mb-4 sm:mb-6">
             <p className="text-xs sm:text-sm text-slate-400">
               {isYours ? (
-                <><span className="font-semibold text-slate-300">{userBackgrounds.length + savedProjects.length}</span> Items</>
+                <><span className="font-semibold text-slate-300">{saved2DProjects.length}</span> Projects</>
               ) : (
-                <><span className="font-semibold text-slate-300">{filteredTemplates.length + (isAll ? userBackgrounds.length + savedProjects.length : 0)}</span> Templates</>
+                <><span className="font-semibold text-slate-300">{filteredTemplates.length + (isAll ? saved2DProjects.length : 0)}</span> Templates</>
               )}
             </p>
           </div>
@@ -303,58 +243,13 @@ function Mockup2DContent() {
           {/* ── Unified grid ── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
 
-            {/* Upload card + user backgrounds — shown in "All" and "Your Projects" */}
+            {/* Upload card — shown in "All" and "Your Projects" */}
             {showYoursCards && (
               <>
                 {UploadCard}
 
-                {userBackgrounds.map((bg) => (
-                  <div
-                    key={bg.id}
-                    className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-purple-500/50 hover:bg-slate-900 transition-all duration-200"
-                  >
-                    {/* Custom badge */}
-                    <div className="absolute top-2 left-2 z-10 bg-slate-950/90 text-emerald-400 text-[10px] font-semibold px-2 py-0.5 rounded border border-emerald-500/30">
-                      Custom
-                    </div>
-
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(bg.id); }}
-                      disabled={deletingId === bg.id}
-                      className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-red-600/90 hover:bg-red-500 rounded-full p-1 disabled:opacity-50"
-                      title="Delete"
-                    >
-                      {deletingId === bg.id ? (
-                        <span className="w-3 h-3 block border border-white/40 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      )}
-                    </button>
-
-                    {/* Preview */}
-                    <button onClick={() => openCustomBackground(bg)} className="block w-full text-left">
-                      <div className="aspect-square bg-slate-900 border-b border-slate-800 overflow-hidden flex items-center justify-center">
-                        <img
-                          src={bgImageUrl(bg)}
-                          alt={bg.name}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-                        />
-                      </div>
-                      <div className="p-3 space-y-1">
-                        <h3 className="text-xs font-medium text-slate-200 line-clamp-2 leading-snug">
-                          {bg.name}
-                        </h3>
-                        <p className="text-[10px] text-slate-500">📁 Your Projects</p>
-                      </div>
-                    </button>
-                  </div>
-                ))}
-
-                {/* Saved editor projects */}
-                {savedProjects.map((proj) => (
+                {/* Saved 2D editor projects */}
+                {saved2DProjects.map((proj) => (
                   <div
                     key={proj.id}
                     className="group relative bg-slate-900/70 rounded-lg border border-slate-800 overflow-hidden hover:shadow-lg hover:border-purple-500/50 hover:bg-slate-900 transition-all duration-200"
